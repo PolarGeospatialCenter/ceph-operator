@@ -1,0 +1,7 @@
+apiVersion: ceph.k8s.pgc.umn.edu/v1alpha1
+kind: CephOsd
+metadata:
+  name: example-cephosd
+spec:
+  # Add fields here
+  size: 3
