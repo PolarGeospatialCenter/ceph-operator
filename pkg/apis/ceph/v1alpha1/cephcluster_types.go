@@ -1,6 +1,9 @@
 package v1alpha1
 
 import (
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -17,6 +20,10 @@ type CephClusterSpec struct {
 type ImageSpec struct {
 	Registry string `json:"registry"`
 	Tag      string `json:"tag"`
+}
+
+func (i ImageSpec) String() string {
+	return fmt.Sprintf("%s:%s", i.Registry, i.Tag)
 }
 
 // CephClusterStatus defines the observed state of CephCluster
@@ -46,4 +53,26 @@ type CephClusterList struct {
 
 func init() {
 	SchemeBuilder.Register(&CephCluster{}, &CephClusterList{})
+}
+
+//GetCephConfigMap returns a configmap containing a vaild ceph.conf file.
+func (c *CephCluster) GetCephConfigMap() (*corev1.ConfigMap, error) {
+	// Inject monitor service name
+	return nil, nil
+}
+
+func (c *CephCluster) GetMonImage() string {
+	return c.Spec.MonImage.String()
+}
+
+func (c *CephCluster) GetOsdImage() string {
+	return c.Spec.OsdImage.String()
+}
+
+func (c *CephCluster) GetMgrImage() string {
+	return c.Spec.MgrImage.String()
+}
+
+func (c *CephCluster) GetMdsImage() string {
+	return c.Spec.MdsImage.String()
 }
