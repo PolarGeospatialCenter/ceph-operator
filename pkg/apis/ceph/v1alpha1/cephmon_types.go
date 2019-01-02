@@ -40,3 +40,7 @@ type CephMonList struct {
 func init() {
 	SchemeBuilder.Register(&CephMon{}, &CephMonList{})
 }
+
+func (m *CephMon) GetDisabled() bool {
+	return m.Spec.Disabled
+}
