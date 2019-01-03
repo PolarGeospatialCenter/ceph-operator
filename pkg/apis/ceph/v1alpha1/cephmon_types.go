@@ -1,6 +1,9 @@
 package v1alpha1
 
 import (
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -43,4 +46,109 @@ func init() {
 
 func (m *CephMon) GetDisabled() bool {
 	return m.Spec.Disabled
+}
+
+func (m *CephMon) GetVolumeClaimTemplate() *corev1.PersistentVolumeClaim {
+	pvc := &corev1.PersistentVolumeClaim{}
+	filesystemMode := corev1.PersistentVolumeFilesystem
+
+	pvc.APIVersion = "v1"
+	pvc.Kind = "PersistentVolumeCliam"
+
+	pvc.Name = m.GetName()
+
+	pvc.Spec.Selector = &m.Spec.PvSelector
+	pvc.Spec.VolumeMode = &filesystemMode
+
+	return pvc
+}
+
+func (m *CephMon) GetPod(monImage, cephConfConfigMap string) *corev1.Pod {
+	pod := &corev1.Pod{}
+
+	pod.APIVersion = "v1"
+	pod.Kind = "Pod"
+
+	pod.Name = fmt.Sprintf("ceph-%s-mon-%s", m.GetClusterName(), m.GetName())
+
+	container := corev1.Container{}
+	container.Name = "ceph-mon"
+	container.Image = monImage
+	container.Env = []corev1.EnvVar{
+		corev1.EnvVar{
+			Name:  "CMD",
+			Value: "start_mon",
+		},
+		corev1.EnvVar{
+			Name:  "CLUSTER",
+			Value: m.GetClusterName(),
+		},
+		corev1.EnvVar{
+			Name: "MON_IP",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{
+					FieldPath: "status.podIP",
+				},
+			},
+		},
+		corev1.EnvVar{
+			Name:  "MON_NAME",
+			Value: m.GetName(),
+		},
+	}
+
+	container.VolumeDevices = []corev1.VolumeDevice{
+		corev1.VolumeDevice{
+			Name:       "ceph-osd-data",
+			DevicePath: "/dev/osd",
+		},
+	}
+
+	container.VolumeMounts = []corev1.VolumeMount{
+		corev1.VolumeMount{
+			Name:      "ceph-conf",
+			MountPath: "/etc/ceph",
+		},
+	}
+
+	pod.Spec.Containers = []corev1.Container{container}
+
+	pod.Spec.Volumes = []corev1.Volume{
+		corev1.Volume{
+			Name: "ceph-osd-data",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: m.GetName(),
+				},
+			},
+		},
+		corev1.Volume{
+			Name: "ceph-conf",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: cephConfConfigMap,
+					},
+				},
+			},
+		},
+	}
+
+	return pod
+}
+
+func (m *CephMon) GetAPIVersion() string {
+	return m.APIVersion
+}
+
+func (m *CephMon) SetAPIVersion(version string) {
+	m.APIVersion = version
+}
+
+func (m *CephMon) GetKind() string {
+	return m.Kind
+}
+
+func (m *CephMon) SetKind(kind string) {
+	m.Kind = kind
 }
