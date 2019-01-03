@@ -101,7 +101,18 @@ func (r *ReconcileCephCluster) Reconcile(request reconcile.Request) (reconcile.R
 
 	// Create or update configmap.
 
-	_ = configMap
+	err = r.client.Create(context.TODO(), configMap)
+
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return reconcile.Result{}, err
+	}
+
+	if errors.IsAlreadyExists(err) {
+		err = r.client.Update(context.TODO(), configMap)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+	}
 
 	// Create or update Monitor Service
 	svc := instance.GetMonitorService()
@@ -110,6 +121,13 @@ func (r *ReconcileCephCluster) Reconcile(request reconcile.Request) (reconcile.R
 	err = r.client.Create(context.TODO(), svc)
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return reconcile.Result{}, err
+	}
+
+	if errors.IsAlreadyExists(err) {
+		err = r.client.Update(context.TODO(), configMap)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 	}
 
 	// Generate Monitor Bootstrap Keyring

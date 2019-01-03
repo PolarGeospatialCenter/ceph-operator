@@ -83,6 +83,12 @@
   version = "v0.17.2"
 
 [[projects]]
+  name = "github.com/go-test/deep"
+  packages = ["."]
+  revision = "6592d9cc0a499ad2d5f574fde80a2b5c5cc3b4f5"
+  version = "v1.0.1"
+
+[[projects]]
   name = "github.com/gogo/protobuf"
   packages = [
     "proto",
@@ -414,6 +420,12 @@
   version = "v0.9.1"
 
 [[projects]]
+  name = "gopkg.in/ini.v1"
+  packages = ["."]
+  revision = "6ed8d5f64cd79a498d1f3fab5880cc376ce41bbe"
+  version = "v1.41.0"
+
+[[projects]]
   name = "gopkg.in/yaml.v2"
   packages = ["."]
   revision = "51d6538a90f86fe93ac480b35f37b2be17fef232"
@@ -680,6 +692,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "bb761a064663db351b91b0c7a45997c401188e6f236928d5e09336b3d32dcc20"
+  inputs-digest = "84c2b37e6ebc6b8155ecac70f68b1f52a3c1f70238730cc1c5a8c807a2ce250c"
   solver-name = "gps-cdcl"
   solver-version = 1

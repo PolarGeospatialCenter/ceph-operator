@@ -1,8 +1,10 @@
 package v1alpha1
 
 import (
+	"bytes"
 	"fmt"
 
+	ini "gopkg.in/ini.v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -13,6 +15,7 @@ const MonitorServiceLabel = "ceph.k8s.pgc.umn.edu/monitorService"
 // CephClusterSpec defines the desired state of CephCluster
 type CephClusterSpec struct {
 	Config         map[string]map[string]interface{} `json:"config"`
+	Fsid           string                            `json:"fsid"`
 	MonServiceName string                            `json:"monServiceName"`
 	MonImage       ImageSpec                         `json:"monImage"`
 	OsdImage       ImageSpec                         `json:"osdImage"`
@@ -61,7 +64,37 @@ func init() {
 //GetCephConfigMap returns a configmap containing a vaild ceph.conf file.
 func (c *CephCluster) GetCephConfigMap() (*corev1.ConfigMap, error) {
 	// Inject monitor service name
-	return nil, nil
+	// FSID, Mon_Host, Public Network, Private Network, Osd
+
+	cephConfIni := ini.Empty()
+
+	global, err := cephConfIni.NewSection("global")
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = global.NewKey("fsid", c.Spec.Fsid)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = global.NewKey("mon_host", c.Spec.MonServiceName)
+	if err != nil {
+		return nil, err
+	}
+
+	cephConf := bytes.NewBufferString("")
+	cephConfIni.WriteTo(cephConf)
+
+	cm := &corev1.ConfigMap{}
+	cm.Name = c.GetCephConfigMapName()
+	cm.Data = map[string]string{"ceph.conf": cephConf.String()}
+
+	return cm, nil
+}
+
+func (c *CephCluster) GetCephConfigMapName() string {
+	return fmt.Sprintf("ceph-%s-conf", c.GetName())
 }
 
 func (c *CephCluster) GetMonImage() string {

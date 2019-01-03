@@ -121,7 +121,7 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 	}
 
 	// Create Pod
-	pod := instance.GetPod(cluster.GetMonImage(), "ceph-conf")
+	pod := instance.GetPod(cluster.GetMonImage(), cluster.GetCephConfigMapName())
 	pod.Namespace = request.Namespace
 	common.UpdateOwnerReferences(instance, pod)
 
