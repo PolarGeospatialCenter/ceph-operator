@@ -4,14 +4,13 @@ import (
 	"context"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
+	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -74,10 +73,6 @@ type ReconcileCephOsd struct {
 	scheme *runtime.Scheme
 }
 
-// Reconcile reads that state of the cluster for a CephOsd object and makes changes based on the state read
-// and what is in the CephOsd.Spec
-// TODO(user): Modify this Reconcile function to implement your Controller logic.  This example creates
-// a Pod as an example
 // Note:
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
@@ -99,54 +94,45 @@ func (r *ReconcileCephOsd) Reconcile(request reconcile.Request) (reconcile.Resul
 		return reconcile.Result{}, err
 	}
 
-	// Define a new Pod object
-	pod := newPodForCR(instance)
-
-	// Set CephOsd instance as the owner and controller
-	if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
-		return reconcile.Result{}, err
-	}
-
-	// Check if this Pod already exists
-	found := &corev1.Pod{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-		err = r.client.Create(context.TODO(), pod)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-
-		// Pod created successfully - don't requeue
+	// Return if disabled
+	if instance.GetDisabled() {
 		return reconcile.Result{}, nil
-	} else if err != nil {
+	}
+
+	// Lookup cluster
+	cluster := &cephv1alpha1.CephCluster{}
+	clusterNamespacedName := &types.NamespacedName{
+		Namespace: request.Namespace,
+		Name:      instance.Spec.ClusterName,
+	}
+	err = r.client.Get(context.TODO(), *clusterNamespacedName, cluster)
+	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	// Pod already exists - don't requeue
-	reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
-	return reconcile.Result{}, nil
-}
+	// Create PVC
+	pvc := instance.GetVolumeClaimTemplate()
+	pvc.Namespace = request.Namespace
+	common.UpdateOwnerReferences(instance, pvc)
 
-// newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *cephv1alpha1.CephOsd) *corev1.Pod {
-	labels := map[string]string{
-		"app": cr.Name,
+	err = r.client.Create(context.TODO(), pvc)
+
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return reconcile.Result{}, err
 	}
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-pod",
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    "busybox",
-					Image:   "busybox",
-					Command: []string{"sleep", "3600"},
-				},
-			},
-		},
+
+	// Create Pod
+	pod := instance.GetPod(cluster.GetOsdImage(), "ceph-conf")
+	pod.Namespace = request.Namespace
+	common.UpdateOwnerReferences(instance, pod)
+
+	err = r.client.Create(context.TODO(), pod)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return reconcile.Result{}, err
 	}
+
+	// Delete pod?
+
+	return reconcile.Result{}, nil
+
 }

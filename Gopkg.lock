@@ -574,7 +574,8 @@
     "util/homedir",
     "util/integer",
     "util/jsonpath",
-    "util/retry"
+    "util/retry",
+    "util/workqueue"
   ]
   revision = "d082d5923d3cc0bfbb066ee5fbdea3d0ca79acf8"
 
@@ -650,15 +651,25 @@
     "pkg/client",
     "pkg/client/apiutil",
     "pkg/client/config",
+    "pkg/controller",
+    "pkg/event",
+    "pkg/handler",
+    "pkg/internal/controller",
+    "pkg/internal/controller/metrics",
     "pkg/internal/recorder",
     "pkg/leaderelection",
     "pkg/manager",
     "pkg/metrics",
     "pkg/patch",
+    "pkg/predicate",
+    "pkg/reconcile",
     "pkg/recorder",
     "pkg/runtime/inject",
     "pkg/runtime/log",
+    "pkg/runtime/scheme",
     "pkg/runtime/signals",
+    "pkg/source",
+    "pkg/source/internal",
     "pkg/webhook/admission",
     "pkg/webhook/admission/types",
     "pkg/webhook/types"
@@ -669,6 +680,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "ee9587f15123954925b7b4959e05bd9861f576d7b27d943857af4288bdb89f95"
+  inputs-digest = "bb761a064663db351b91b0c7a45997c401188e6f236928d5e09336b3d32dcc20"
   solver-name = "gps-cdcl"
   solver-version = 1
