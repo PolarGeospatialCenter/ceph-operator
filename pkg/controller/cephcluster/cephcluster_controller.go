@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -130,9 +131,57 @@ func (r *ReconcileCephCluster) Reconcile(request reconcile.Request) (reconcile.R
 		}
 	}
 
-	// Generate Monitor Bootstrap Keyring
+	// Generate Monitor Keyring
+	monKeyring := MON_KEYRING
+	monSecret := &corev1.Secret{}
+	monSecretNamespacedName := &types.NamespacedName{
+		Namespace: request.Namespace,
+		Name:      monKeyring.GetSecretName(instance.GetName()),
+	}
+	err = r.client.Get(context.TODO(), *monSecretNamespacedName, monSecret)
+	if err != nil && !errors.IsNotFound(err) {
+		return reconcile.Result{}, err
+	}
 
-	// Generate Bootstrap generation keyring
+	if errors.IsNotFound(err) {
+		err = monKeyring.GenerateKey()
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		monSecret = monKeyring.GetSecret(instance.GetName())
+		monSecret.Namespace = request.Namespace
+		err = r.client.Create(context.TODO(), monSecret)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+
+	// Generate Admin Keyring
+	adminKeyring := CLIENT_ADMIN_KEYRING
+	adminSecret := &corev1.Secret{}
+	adminSecretNamespacedName := &types.NamespacedName{
+		Namespace: request.Namespace,
+		Name:      adminKeyring.GetSecretName(instance.GetName()),
+	}
+	err = r.client.Get(context.TODO(), *adminSecretNamespacedName, adminSecret)
+	if err != nil && !errors.IsNotFound(err) {
+		return reconcile.Result{}, err
+	}
+
+	if errors.IsNotFound(err) {
+		err = adminKeyring.GenerateKey()
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		adminSecret = adminKeyring.GetSecret(instance.GetName())
+		adminSecret.Namespace = request.Namespace
+		err = r.client.Create(context.TODO(), adminSecret)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+	}
 
 	// Launch MGR
 
