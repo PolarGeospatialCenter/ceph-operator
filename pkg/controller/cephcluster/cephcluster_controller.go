@@ -103,6 +103,15 @@ func (r *ReconcileCephCluster) Reconcile(request reconcile.Request) (reconcile.R
 
 	_ = configMap
 
+	// Create or update Monitor Service
+	svc := instance.GetMonitorService()
+	svc.Namespace = instance.Namespace
+
+	err = r.client.Create(context.TODO(), svc)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return reconcile.Result{}, err
+	}
+
 	// Generate Monitor Bootstrap Keyring
 
 	// Generate Bootstrap generation keyring

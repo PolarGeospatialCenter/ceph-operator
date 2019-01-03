@@ -5,7 +5,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
+
+const MonitorServiceLabel = "ceph.k8s.pgc.umn.edu/monitorService"
 
 // CephClusterSpec defines the desired state of CephCluster
 type CephClusterSpec struct {
@@ -75,4 +78,25 @@ func (c *CephCluster) GetMgrImage() string {
 
 func (c *CephCluster) GetMdsImage() string {
 	return c.Spec.MdsImage.String()
+}
+
+func (c *CephCluster) GetMonitorService() *corev1.Service {
+	svc := &corev1.Service{}
+
+	svc.Name = c.Spec.MonServiceName
+
+	svc.Spec = corev1.ServiceSpec{
+		Ports: []corev1.ServicePort{
+			corev1.ServicePort{
+				Port:       6789,
+				TargetPort: intstr.FromInt(6789),
+			},
+		},
+		Selector: map[string]string{
+			MonitorServiceLabel: "",
+		},
+		ClusterIP: "None",
+	}
+
+	return svc
 }

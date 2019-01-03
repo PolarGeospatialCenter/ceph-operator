@@ -71,6 +71,8 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap string) *corev1.Pod {
 
 	pod.Name = fmt.Sprintf("ceph-%s-mon-%s", m.GetClusterName(), m.GetName())
 
+	pod.Labels[MonitorServiceLabel] = ""
+
 	container := corev1.Container{}
 	container.Name = "ceph-mon"
 	container.Image = monImage
