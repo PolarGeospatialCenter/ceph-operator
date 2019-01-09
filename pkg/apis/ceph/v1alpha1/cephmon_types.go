@@ -98,10 +98,6 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, name
 			Value: "start_mon",
 		},
 		corev1.EnvVar{
-			Name:  "CLUSTER",
-			Value: m.GetClusterName(),
-		},
-		corev1.EnvVar{
 			Name: "MON_IP",
 			ValueFrom: &corev1.EnvVarSource{
 				FieldRef: &corev1.ObjectFieldSelector{
@@ -110,15 +106,8 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, name
 			},
 		},
 		corev1.EnvVar{
-			Name:  "MON_NAME",
-			Value: m.GetName(),
-		},
-	}
-
-	container.VolumeDevices = []corev1.VolumeDevice{
-		corev1.VolumeDevice{
-			Name:       "ceph-osd-data",
-			DevicePath: "/dev/osd",
+			Name:  "MON_ID",
+			Value: m.Spec.ID,
 		},
 	}
 
