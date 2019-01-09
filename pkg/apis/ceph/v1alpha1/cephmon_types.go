@@ -116,13 +116,17 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, name
 			Name:      "ceph-conf",
 			MountPath: "/etc/ceph",
 		},
+		corev1.VolumeMount{
+			Name:      "ceph-mon-data",
+			MountPath: "/mon",
+		},
 	}
 
 	pod.Spec.Containers = []corev1.Container{container}
 
 	pod.Spec.Volumes = []corev1.Volume{
 		corev1.Volume{
-			Name: "ceph-osd-data",
+			Name: "ceph-mon-data",
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: m.GetName(),
