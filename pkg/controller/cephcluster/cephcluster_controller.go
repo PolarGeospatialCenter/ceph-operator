@@ -99,6 +99,7 @@ func (r *ReconcileCephCluster) Reconcile(request reconcile.Request) (reconcile.R
 	if err != nil {
 		return reconcile.Result{}, err
 	}
+	configMap.Namespace = request.Namespace
 
 	// Create or update configmap.
 
