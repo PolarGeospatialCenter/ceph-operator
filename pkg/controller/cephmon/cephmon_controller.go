@@ -110,7 +110,10 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 	}
 
 	// Create PVC
-	pvc := instance.GetVolumeClaimTemplate()
+	pvc, err := instance.GetVolumeClaimTemplate()
+	if err != nil {
+		return reconcile.Result{}, err
+	}
 	pvc.Namespace = request.Namespace
 	common.UpdateOwnerReferences(instance, pvc)
 
