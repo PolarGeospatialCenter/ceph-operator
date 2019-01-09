@@ -36,7 +36,7 @@ type Keyring struct {
 }
 
 func (k *Keyring) GetSecretName(cluster string) string {
-	return fmt.Sprintf("ceph-%s-%s-keyring", cluster, k.Entity)
+	return fmt.Sprintf("ceph-%s-%s-keyring", cluster, strings.Trim(k.Entity, "."))
 }
 
 func (k *Keyring) GetSecret(cluster string) *corev1.Secret {
