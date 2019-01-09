@@ -79,7 +79,7 @@ func (m *CephMon) GetVolumeClaimTemplate() (*corev1.PersistentVolumeClaim, error
 	return pvc, nil
 }
 
-func (m *CephMon) GetPod(monImage, cephConfConfigMap string) *corev1.Pod {
+func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, namespace, clusterDomain string) *corev1.Pod {
 	pod := &corev1.Pod{}
 
 	pod.APIVersion = "v1"
@@ -149,6 +149,12 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap string) *corev1.Pod {
 					},
 				},
 			},
+		},
+	}
+
+	pod.Spec.DNSConfig = &corev1.PodDNSConfig{
+		Searches: []string{
+			fmt.Sprintf("%s.%s.svc.%s", discoveryServiceName, namespace, clusterDomain),
 		},
 	}
 
