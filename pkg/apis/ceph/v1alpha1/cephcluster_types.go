@@ -17,6 +17,7 @@ type CephClusterSpec struct {
 	Config         map[string]map[string]interface{} `json:"config"`
 	Fsid           string                            `json:"fsid"`
 	MonServiceName string                            `json:"monServiceName"`
+	ClusterDomain  string                            `json:"clusterDomain"`
 	MonImage       ImageSpec                         `json:"monImage"`
 	OsdImage       ImageSpec                         `json:"osdImage"`
 	MgrImage       ImageSpec                         `json:"mgrImage"`
@@ -121,6 +122,7 @@ func (c *CephCluster) GetMonitorService() *corev1.Service {
 	svc.Spec = corev1.ServiceSpec{
 		Ports: []corev1.ServicePort{
 			corev1.ServicePort{
+				Name:       "ceph-mon",
 				Port:       6789,
 				TargetPort: intstr.FromInt(6789),
 			},
@@ -129,6 +131,29 @@ func (c *CephCluster) GetMonitorService() *corev1.Service {
 			MonitorServiceLabel: "",
 		},
 		ClusterIP: "None",
+	}
+
+	return svc
+}
+
+func (c *CephCluster) GetMonitorDiscoveryService() *corev1.Service {
+	svc := &corev1.Service{}
+
+	svc.Name = fmt.Sprintf("%s-discovery", c.Spec.MonServiceName)
+
+	svc.Spec = corev1.ServiceSpec{
+		Ports: []corev1.ServicePort{
+			corev1.ServicePort{
+				Name:       "ceph-mon",
+				Port:       6789,
+				TargetPort: intstr.FromInt(6789),
+			},
+		},
+		Selector: map[string]string{
+			MonitorServiceLabel: "",
+		},
+		ClusterIP:                "None",
+		PublishNotReadyAddresses: true,
 	}
 
 	return svc
