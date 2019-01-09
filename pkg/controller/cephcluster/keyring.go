@@ -44,7 +44,7 @@ func (k *Keyring) GetSecret(cluster string) *corev1.Secret {
 
 	secret.Name = k.GetSecretName(cluster)
 
-	keyringFilename := fmt.Sprintf("%s.%s.keyring", cluster, strings.Trim(k.Entity, "."))
+	keyringFilename := "keyring"
 	secret.StringData = make(map[string]string)
 	secret.StringData[keyringFilename] = k.CreateKeyring()
 
