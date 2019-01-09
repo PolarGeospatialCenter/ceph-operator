@@ -123,8 +123,11 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		return reconcile.Result{}, err
 	}
 
+	monitorDiscoveryServiceName := cluster.GetMonitorDiscoveryService().GetName()
+
 	// Create Pod
-	pod := instance.GetPod(cluster.GetMonImage(), cluster.GetCephConfigMapName())
+	pod := instance.GetPod(cluster.GetMonImage(), cluster.GetCephConfigMapName(),
+		monitorDiscoveryServiceName, request.Namespace, cluster.Spec.ClusterDomain)
 	pod.Namespace = request.Namespace
 	common.UpdateOwnerReferences(instance, pod)
 
