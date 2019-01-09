@@ -4,14 +4,16 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // CephMonSpec defines the desired state of CephMon
 type CephMonSpec struct {
-	ClusterName string               `json:"clusterName"`
-	PvSelector  metav1.LabelSelector `json:"pvSelector"`
-	Disabled    bool                 `json:"disabled"`
+	ClusterName      string `json:"clusterName"`
+	ID               string `json:"id"`
+	PvSelectorString string `json:"pvSelectorString"`
+	Disabled         bool   `json:"disabled"`
 }
 
 // CephMonStatus defines the observed state of CephMon
