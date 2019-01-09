@@ -50,7 +50,7 @@ func (m *CephMon) GetDisabled() bool {
 	return m.Spec.Disabled
 }
 
-func (m *CephMon) GetVolumeClaimTemplate() *corev1.PersistentVolumeClaim {
+func (m *CephMon) GetVolumeClaimTemplate() (*corev1.PersistentVolumeClaim, error) {
 	pvc := &corev1.PersistentVolumeClaim{}
 	filesystemMode := corev1.PersistentVolumeFilesystem
 
@@ -59,10 +59,15 @@ func (m *CephMon) GetVolumeClaimTemplate() *corev1.PersistentVolumeClaim {
 
 	pvc.Name = m.GetName()
 
-	pvc.Spec.Selector = &m.Spec.PvSelector
+	ls, err := m.GetPvLabelSelector()
+	if err != nil {
+		return nil, err
+	}
+
+	pvc.Spec.Selector = ls
 	pvc.Spec.VolumeMode = &filesystemMode
 
-	return pvc
+	return pvc, nil
 }
 
 func (m *CephMon) GetPod(monImage, cephConfConfigMap string) *corev1.Pod {
@@ -139,6 +144,11 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap string) *corev1.Pod {
 	}
 
 	return pod
+}
+
+func (m *CephMon) GetPvLabelSelector() (*metav1.LabelSelector, error) {
+	return metav1.ParseToLabelSelector(m.Spec.PvSelectorString)
+
 }
 
 func (m *CephMon) GetAPIVersion() string {
