@@ -57,7 +57,7 @@ func (k Keyring) CreateKeyring() string {
 	buf.WriteString(fmt.Sprintf("[%s]\n", k.Entity))
 	buf.WriteString(fmt.Sprintf("    key = %s\n", k.Key))
 	for k, v := range k.Caps {
-		buf.WriteString(fmt.Sprintf("    caps %s = \"%s\"", k, v))
+		buf.WriteString(fmt.Sprintf("    caps %s = \"%s\"\n", k, v))
 	}
 
 	return buf.String()
