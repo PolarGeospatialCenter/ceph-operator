@@ -1,0 +1,15 @@
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: cephmonclusters.ceph.k8s.pgc.umn.edu
+spec:
+  group: ceph.k8s.pgc.umn.edu
+  names:
+    kind: CephMonCluster
+    listKind: CephMonClusterList
+    plural: cephmonclusters
+    singular: cephmoncluster
+  scope: Namespaced
+  version: v1alpha1
+  subresources:
+    status: {}

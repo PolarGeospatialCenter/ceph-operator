@@ -14,14 +14,14 @@ const MonitorServiceLabel = "ceph.k8s.pgc.umn.edu/monitorService"
 
 // CephClusterSpec defines the desired state of CephCluster
 type CephClusterSpec struct {
-	Config         map[string]map[string]interface{} `json:"config"`
-	Fsid           string                            `json:"fsid"`
-	MonServiceName string                            `json:"monServiceName"`
-	ClusterDomain  string                            `json:"clusterDomain"`
-	MonImage       ImageSpec                         `json:"monImage"`
-	OsdImage       ImageSpec                         `json:"osdImage"`
-	MgrImage       ImageSpec                         `json:"mgrImage"`
-	MdsImage       ImageSpec                         `json:"mdsImage"`
+	Config         map[string]map[string]string `json:"config"`
+	Fsid           string                       `json:"fsid"`
+	MonServiceName string                       `json:"monServiceName"`
+	ClusterDomain  string                       `json:"clusterDomain"`
+	MonImage       ImageSpec                    `json:"monImage"`
+	OsdImage       ImageSpec                    `json:"osdImage"`
+	MgrImage       ImageSpec                    `json:"mgrImage"`
+	MdsImage       ImageSpec                    `json:"mdsImage"`
 }
 
 type ImageSpec struct {
@@ -35,6 +35,7 @@ func (i ImageSpec) String() string {
 
 // CephClusterStatus defines the observed state of CephCluster
 type CephClusterStatus struct {
+	MonClusterName string `json:"monClusterName"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

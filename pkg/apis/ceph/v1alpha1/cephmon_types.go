@@ -8,6 +8,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const MonQuorumPodCondition corev1.PodConditionType = corev1.PodReady
+
 // CephMonSpec defines the desired state of CephMon
 type CephMonSpec struct {
 	ClusterName      string `json:"clusterName"`
@@ -16,9 +18,26 @@ type CephMonSpec struct {
 	Disabled         bool   `json:"disabled"`
 }
 
+// MonState describes the state of the monitor
+type MonState string
+
+const (
+	MonUnintilized     MonState = "Unintilized"
+	MonLaunchPod       MonState = "Launch Pod"
+	MonWaitForPodRun   MonState = "Wait for Pod Run"
+	MonNextEpoch       MonState = "Wait for next Epoch"
+	MonWaitForPodReady MonState = "Wait for Pod Ready"
+	MonInQuorum        MonState = "In Quorum"
+	MonDisabled        MonState = "Disabled"
+	MonError           MonState = "Error"
+	MonCleanup         MonState = "Cleanup"
+	MonIdle            MonState = "Idle"
+)
+
 // CephMonStatus defines the observed state of CephMon
 type CephMonStatus struct {
-	Healthy bool `json:"healthy"`
+	Healthy bool     `json:"healthy"`
+	State   MonState `json:"monState"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -79,13 +98,17 @@ func (m *CephMon) GetVolumeClaimTemplate() (*corev1.PersistentVolumeClaim, error
 	return pvc, nil
 }
 
+func (m *CephMon) GetPodName() string {
+	return fmt.Sprintf("ceph-%s", m.GetName())
+}
+
 func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, namespace, clusterDomain string) *corev1.Pod {
 	pod := &corev1.Pod{}
 
 	pod.APIVersion = "v1"
 	pod.Kind = "Pod"
 
-	pod.Name = fmt.Sprintf("ceph-%s-mon-%s", m.GetClusterName(), m.GetName())
+	pod.Name = m.GetPodName()
 
 	pod.SetLabels(map[string]string{MonitorServiceLabel: ""})
 
@@ -121,6 +144,8 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, name
 			MountPath: "/mon",
 		},
 	}
+
+	container.ImagePullPolicy = corev1.PullAlways
 
 	pod.Spec.Containers = []corev1.Container{container}
 
@@ -173,4 +198,23 @@ func (m *CephMon) GetKind() string {
 
 func (m *CephMon) SetKind(kind string) {
 	m.Kind = kind
+}
+
+func (c *CephMon) GetMonState() MonState {
+	return c.Status.State
+}
+
+func (c *CephMon) SetMonState(state MonState) {
+	c.Status.State = state
+}
+
+func (c *CephMon) CheckMonState(state ...MonState) bool {
+
+	for _, st := range state {
+		if c.GetMonState() == st {
+			return true
+		}
+	}
+
+	return false
 }

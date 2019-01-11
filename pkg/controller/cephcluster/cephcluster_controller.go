@@ -109,14 +109,14 @@ func (r *ReconcileCephCluster) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
-	if errors.IsAlreadyExists(err) {
-		err = r.client.Update(context.TODO(), configMap)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-	}
+	// if errors.IsAlreadyExists(err) {
+	// 	err = r.client.Update(context.TODO(), configMap)
+	// 	if err != nil {
+	// 		return reconcile.Result{}, err
+	// 	}
+	// }
 
-	// Create or update Monitor Service
+	// Create or update monitor Service
 	svc := instance.GetMonitorService()
 	svc.Namespace = instance.Namespace
 
@@ -125,12 +125,28 @@ func (r *ReconcileCephCluster) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
-	if errors.IsAlreadyExists(err) {
-		err = r.client.Update(context.TODO(), configMap)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
+	// if errors.IsAlreadyExists(err) {
+	// 	err = r.client.Update(context.TODO(), svc)
+	// 	if err != nil {
+	// 		return reconcile.Result{}, err
+	// 	}
+	// }
+
+	// Create or update monitor discovery svc
+	discoverySvc := instance.GetMonitorDiscoveryService()
+	discoverySvc.Namespace = instance.Namespace
+
+	err = r.client.Create(context.TODO(), discoverySvc)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return reconcile.Result{}, err
 	}
+
+	// if errors.IsAlreadyExists(err) {
+	// 	err = r.client.Update(context.TODO(), discoverySvc)
+	// 	if err != nil {
+	// 		return reconcile.Result{}, err
+	// 	}
+	// }
 
 	// Generate Monitor Keyring
 	monKeyring := MON_KEYRING

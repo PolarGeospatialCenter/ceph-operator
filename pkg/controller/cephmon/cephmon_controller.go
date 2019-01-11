@@ -2,6 +2,7 @@ package cephmon
 
 import (
 	"context"
+	"time"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
 	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common"
@@ -93,9 +94,12 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		return reconcile.Result{}, err
 	}
 
-	// Return if disabled
-	if instance.GetDisabled() {
-		return reconcile.Result{}, nil
+	if instance.GetDisabled() && !instance.CheckMonState(cephv1alpha1.MonCleanup, cephv1alpha1.MonIdle) {
+		instance.Status.State = cephv1alpha1.MonCleanup
+		_, err := r.updateAndRequeue(instance)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 	}
 
 	// Lookup cluster
@@ -109,31 +113,139 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		return reconcile.Result{}, err
 	}
 
-	// Create PVC
-	pvc, err := instance.GetVolumeClaimTemplate()
+	// Lookup monCluster
+	monCluster := &cephv1alpha1.CephMonCluster{}
+	monClusterNamespacedName := &types.NamespacedName{
+		Namespace: request.Namespace,
+		Name:      cluster.Status.MonClusterName,
+	}
+	err = r.client.Get(context.TODO(), *monClusterNamespacedName, monCluster)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
-	pvc.Namespace = request.Namespace
-	common.UpdateOwnerReferences(instance, pvc)
 
-	err = r.client.Create(context.TODO(), pvc)
+	switch instance.GetMonState() {
+	case cephv1alpha1.MonError:
+		log.Info("Monitor is in error state, cleaning up", "MonitorID", instance.Spec.ID)
+		instance.Status.State = cephv1alpha1.MonCleanup
+		return r.updateAndRequeue(instance)
 
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return reconcile.Result{}, err
-	}
+	case cephv1alpha1.MonCleanup:
+		pod := &corev1.Pod{}
+		pod.Namespace = request.Namespace
+		pod.Name = instance.GetPodName()
+		err = r.client.Delete(context.TODO(), pod)
+		if err != nil && !errors.IsNotFound(err) {
+			return reconcile.Result{}, err
+		}
 
-	monitorDiscoveryServiceName := cluster.GetMonitorDiscoveryService().GetName()
+		instance.Status.State = cephv1alpha1.MonIdle
+		return r.updateAndRequeue(instance)
 
-	// Create Pod
-	pod := instance.GetPod(cluster.GetMonImage(), cluster.GetCephConfigMapName(),
-		monitorDiscoveryServiceName, request.Namespace, cluster.Spec.ClusterDomain)
-	pod.Namespace = request.Namespace
-	common.UpdateOwnerReferences(instance, pod)
+	case cephv1alpha1.MonIdle:
+		switch monCluster.GetMonClusterState() {
+		case cephv1alpha1.MonClusterInQuorum:
+			instance.Status.State = cephv1alpha1.MonLaunchPod
 
-	err = r.client.Create(context.TODO(), pod)
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return reconcile.Result{}, err
+		case cephv1alpha1.MonClusterLaunching:
+			if monCluster.Status.MonMapContains(instance) {
+				instance.Status.State = cephv1alpha1.MonLaunchPod
+			}
+
+		case cephv1alpha1.MonClusterIdle:
+
+			// Update Monmap
+			if monCluster.Status.MonMapEmpty() {
+				err := r.updateMonMap(monCluster, instance.Spec.ID, cephv1alpha1.MonMapEntry{
+					Port: 6789,
+				})
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+			}
+
+			// Check if in monmap
+			instance.Status.State = cephv1alpha1.MonLaunchPod
+
+		default:
+			return reconcile.Result{Requeue: true}, nil
+		}
+
+		err = r.client.Update(context.TODO(), instance)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		return reconcile.Result{Requeue: true}, nil
+
+	case cephv1alpha1.MonDisabled:
+		// Kill running pod
+		// Cleanup
+
+	case cephv1alpha1.MonLaunchPod:
+		if !cluster.CheckMonClusterState(cephv1alpha1.MonClusterInQuorum,
+			cephv1alpha1.MonClusterEstablishingQuorum) {
+			log.Info("Refusing to launch monitor while cluster is unexpected state",
+				"ClusterState", cluster.GetMonClusterState(), "MonitorId", instance.Spec.ID)
+			return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
+		}
+		// Create PVC
+		pvc, err := instance.GetVolumeClaimTemplate()
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		pvc.Namespace = request.Namespace
+		common.UpdateOwnerReferences(instance, pvc)
+
+		err = r.client.Create(context.TODO(), pvc)
+
+		if err != nil && !errors.IsAlreadyExists(err) {
+			return reconcile.Result{}, err
+		}
+
+		monitorDiscoveryServiceName := cluster.GetMonitorDiscoveryService().GetName()
+
+		// Create Pod
+		pod := instance.GetPod(cluster.GetMonImage(), cluster.GetCephConfigMapName(),
+			monitorDiscoveryServiceName, request.Namespace, cluster.Spec.ClusterDomain)
+		pod.Namespace = request.Namespace
+		common.UpdateOwnerReferences(instance, pod)
+
+		err = r.client.Create(context.TODO(), pod)
+		if err != nil && !errors.IsAlreadyExists(err) {
+			return reconcile.Result{}, err
+		}
+
+		switch cluster.GetMonClusterState() {
+		case cephv1alpha1.MonClusterInQuorum:
+			instance.Status.State = cephv1alpha1.MonWaitForPodReady
+			err = r.client.Update(context.TODO(), instance)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		case cephv1alpha1.MonClusterEstablishingQuorum:
+			instance.Status.State = cephv1alpha1.MonWaitForPodRun
+			err = r.client.Update(context.TODO(), instance)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		}
+		return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
+
+	case cephv1alpha1.MonWaitForPodRun:
+		pod := &corev1.Pod{}
+		podNamespacedName := &types.NamespacedName{
+			Namespace: request.Namespace,
+			Name:      instance.GetPodName(),
+		}
+		err = r.client.Get(context.TODO(), *podNamespacedName, pod)
+		if errors.IsNotFound(err) {
+
+		}
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
 	}
 
 	// Attach ENV Vars to Pod
@@ -148,4 +260,58 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 
 	return reconcile.Result{}, nil
 
+}
+
+func (r *ReconcileCephMon) podInQuorum(podName, namespace string) (bool, error) {
+	pod := &corev1.Pod{}
+	err := r.client.Get(context.TODO(), types.NamespacedName{
+		Name:      podName,
+		Namespace: namespace,
+	}, pod)
+	if errors.IsNotFound(err) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+
+	for _, status := range pod.Status.Conditions {
+		if status.Type == cephv1alpha1.MonQuorumPodCondition {
+			return status.Status == corev1.ConditionTrue, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *ReconcileCephMon) updateAndRequeue(object runtime.Object) (reconcile.Result, error) {
+	err := r.client.Update(context.TODO(), object)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	return reconcile.Result{Requeue: true}, nil
+}
+
+func (r *ReconcileCephMon) createOrUpdate(object runtime.Object) (reconcile.Result, error) {
+	err := r.client.Create(context.TODO(), object)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return reconcile.Result{}, err
+	}
+
+	err = r.client.Update(context.TODO(), object)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	return reconcile.Result{}, nil
+}
+
+func (r *ReconcileCephMon) updateMonMap(monCluster *cephv1alpha1.CephMonCluster, id string, e cephv1alpha1.MonMapEntry) error {
+
+	monCluster.Status.MonMapUpdate(id, e)
+
+	err := r.client.Update(context.TODO(), monCluster)
+
+	if err != nil && !errors.IsConflict(err) {
+		return err
+	}
+	return nil
 }
