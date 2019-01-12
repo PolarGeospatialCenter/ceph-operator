@@ -177,10 +177,11 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
 
 	case cephv1alpha1.MonLaunchPod:
-		if !cluster.CheckMonClusterState(cephv1alpha1.MonClusterInQuorum,
-			cephv1alpha1.MonClusterEstablishingQuorum) {
+		if !monCluster.CheckMonClusterState(cephv1alpha1.MonClusterInQuorum,
+			cephv1alpha1.MonClusterEstablishingQuorum,
+			cephv1alpha1.MonClusterLaunching) {
 			log.Info("Refusing to launch monitor while cluster is unexpected state",
-				"ClusterState", cluster.GetMonClusterState(), "MonitorId", instance.Spec.ID)
+				"ClusterState", monCluster.GetMonClusterState(), "MonitorId", instance.Spec.ID)
 			return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
 		}
 		// Create PVC
@@ -210,21 +211,15 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 			return reconcile.Result{}, err
 		}
 
-		switch cluster.GetMonClusterState() {
+		switch monCluster.GetMonClusterState() {
 		case cephv1alpha1.MonClusterInQuorum:
 			instance.Status.State = cephv1alpha1.MonWaitForPodReady
-			err = r.client.Update(context.TODO(), instance)
-			if err != nil {
-				return reconcile.Result{}, err
-			}
+		case cephv1alpha1.MonClusterLaunching:
+			instance.Status.State = cephv1alpha1.MonWaitForPodRun
 		case cephv1alpha1.MonClusterEstablishingQuorum:
 			instance.Status.State = cephv1alpha1.MonWaitForPodRun
-			err = r.client.Update(context.TODO(), instance)
-			if err != nil {
-				return reconcile.Result{}, err
-			}
 		}
-		return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
+		return r.updateAndRequeue(instance)
 
 	case cephv1alpha1.MonWaitForPodRun:
 		pod := &corev1.Pod{}
