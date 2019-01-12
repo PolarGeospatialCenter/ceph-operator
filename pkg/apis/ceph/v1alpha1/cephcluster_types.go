@@ -85,6 +85,16 @@ func (c *CephCluster) GetCephConfigMap() (*corev1.ConfigMap, error) {
 		return nil, err
 	}
 
+	for sectionName, sectionMap := range c.Spec.Config {
+		section, err := cephConfIni.NewSection(sectionName)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range sectionMap {
+			_, err = section.NewKey(k, v)
+		}
+	}
+
 	cephConf := bytes.NewBufferString("")
 	cephConfIni.WriteTo(cephConf)
 
