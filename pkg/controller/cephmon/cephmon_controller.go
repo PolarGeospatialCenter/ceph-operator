@@ -166,7 +166,7 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 				}
 			}
 		default:
-			return reconcile.Result{Requeue: true}, nil
+			return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
 		}
 
 		err = r.client.Update(context.TODO(), instance)
@@ -174,7 +174,7 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 			return reconcile.Result{}, err
 		}
 
-		return reconcile.Result{Requeue: true}, nil
+		return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
 
 	case cephv1alpha1.MonLaunchPod:
 		if !cluster.CheckMonClusterState(cephv1alpha1.MonClusterInQuorum,
