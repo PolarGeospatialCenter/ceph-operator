@@ -176,10 +176,6 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 
 		return reconcile.Result{Requeue: true}, nil
 
-	case cephv1alpha1.MonDisabled:
-		// Kill running pod
-		// Cleanup
-
 	case cephv1alpha1.MonLaunchPod:
 		if !cluster.CheckMonClusterState(cephv1alpha1.MonClusterInQuorum,
 			cephv1alpha1.MonClusterEstablishingQuorum) {

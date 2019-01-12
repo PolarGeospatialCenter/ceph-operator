@@ -28,7 +28,6 @@ const (
 	MonNextEpoch       MonState = "Wait for next Epoch"
 	MonWaitForPodReady MonState = "Wait for Pod Ready"
 	MonInQuorum        MonState = "In Quorum"
-	MonDisabled        MonState = "Disabled"
 	MonError           MonState = "Error"
 	MonCleanup         MonState = "Cleanup"
 	MonIdle            MonState = "Idle"
