@@ -2,6 +2,7 @@ package cephmon
 
 import (
 	"context"
+	"net"
 	"time"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
@@ -222,19 +223,28 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		return r.updateAndRequeue(instance)
 
 	case cephv1alpha1.MonWaitForPodRun:
-		pod := &corev1.Pod{}
-		podNamespacedName := &types.NamespacedName{
-			Namespace: request.Namespace,
-			Name:      instance.GetPodName(),
-		}
-		err = r.client.Get(context.TODO(), *podNamespacedName, pod)
-		if errors.IsNotFound(err) {
-
-		}
-		if err != nil {
+		updated, err := r.updateMonMapOnPodStatus(monCluster, instance, podRunning)
+		if !updated || err != nil {
 			return reconcile.Result{}, err
 		}
+		instance.Status.State = cephv1alpha1.MonWaitForPodReady
+		return r.updateAndRequeue(instance)
 
+	case cephv1alpha1.MonWaitForPodReady:
+		updated, err := r.updateMonMapOnPodStatus(monCluster, instance, podInQuorum)
+		if !updated || err != nil {
+			return reconcile.Result{}, err
+		}
+		instance.Status.State = cephv1alpha1.MonInQuorum
+		return r.updateAndRequeue(instance)
+	case cephv1alpha1.MonInQuorum:
+		quorum, _, err := r.checkPod(instance.GetPodName(), instance.Namespace, podInQuorum)
+		if quorum || err != nil {
+			return reconcile.Result{}, err
+		}
+		// out of quorum with no error
+		instance.Status.State = cephv1alpha1.MonCleanup
+		return r.updateAndRequeue(instance)
 	}
 
 	// Attach ENV Vars to Pod
@@ -251,24 +261,35 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 
 }
 
-func (r *ReconcileCephMon) podInQuorum(podName, namespace string) (bool, error) {
+type podCheckFunc func(*corev1.Pod) bool
+
+func (r *ReconcileCephMon) checkPod(podName, namespace string, checkFunc podCheckFunc) (bool, net.IP, error) {
 	pod := &corev1.Pod{}
 	err := r.client.Get(context.TODO(), types.NamespacedName{
 		Name:      podName,
 		Namespace: namespace,
 	}, pod)
 	if errors.IsNotFound(err) {
-		return false, nil
+		return false, net.IP{}, nil
 	} else if err != nil {
-		return false, err
+		return false, net.IP{}, err
 	}
+	podIP := net.ParseIP(pod.Status.PodIP)
 
+	return checkFunc(pod), podIP, nil
+}
+
+func podInQuorum(pod *corev1.Pod) bool {
 	for _, status := range pod.Status.Conditions {
 		if status.Type == cephv1alpha1.MonQuorumPodCondition {
-			return status.Status == corev1.ConditionTrue, nil
+			return status.Status == corev1.ConditionTrue
 		}
 	}
-	return false, nil
+	return false
+}
+
+func podRunning(pod *corev1.Pod) bool {
+	return pod.Status.Phase == corev1.PodRunning
 }
 
 func (r *ReconcileCephMon) updateAndRequeue(object runtime.Object) (reconcile.Result, error) {
@@ -291,6 +312,30 @@ func (r *ReconcileCephMon) createOrUpdate(object runtime.Object) (reconcile.Resu
 	}
 
 	return reconcile.Result{}, nil
+}
+
+// updatesMonMapOnPodStatus checks the status of our monitor pod using the provided podCheckFunc,
+// if the function returns true the monCluster MonMap is updated.  Returns true iff the MonMap was updated.
+func (r *ReconcileCephMon) updateMonMapOnPodStatus(monCluster *cephv1alpha1.CephMonCluster, instance *cephv1alpha1.CephMon, checkFunc podCheckFunc) (bool, error) {
+	status, podIP, err := r.checkPod(instance.GetPodName(), instance.Namespace, checkFunc)
+	if err != nil {
+		return false, err
+	}
+
+	if !status {
+		return false, nil
+	}
+
+	monMapEntry := cephv1alpha1.MonMapEntry{
+		IP:         podIP,
+		Port:       6789,
+		StartEpoch: monCluster.Status.StartEpoch,
+	}
+	err = r.updateMonMap(monCluster, instance.Spec.ID, monMapEntry)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (r *ReconcileCephMon) updateMonMap(monCluster *cephv1alpha1.CephMonCluster, id string, e cephv1alpha1.MonMapEntry) error {
