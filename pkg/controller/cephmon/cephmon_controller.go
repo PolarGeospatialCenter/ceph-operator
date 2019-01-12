@@ -165,10 +165,6 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 					return reconcile.Result{}, err
 				}
 			}
-
-			// Check if in monmap
-			instance.Status.State = cephv1alpha1.MonLaunchPod
-
 		default:
 			return reconcile.Result{Requeue: true}, nil
 		}
