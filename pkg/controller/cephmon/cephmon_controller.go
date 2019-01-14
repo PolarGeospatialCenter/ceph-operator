@@ -95,14 +95,6 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		return reconcile.Result{}, err
 	}
 
-	if instance.GetDisabled() && !instance.CheckMonState(cephv1alpha1.MonCleanup, cephv1alpha1.MonIdle) {
-		instance.Status.State = cephv1alpha1.MonCleanup
-		_, err := r.updateAndRequeue(instance)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-	}
-
 	// Lookup cluster
 	cluster := &cephv1alpha1.CephCluster{}
 	clusterNamespacedName := &types.NamespacedName{
@@ -123,6 +115,17 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 	err = r.client.Get(context.TODO(), *monClusterNamespacedName, monCluster)
 	if err != nil {
 		return reconcile.Result{}, err
+	}
+
+	// Check for disabled or lost quorum states
+	if (instance.GetDisabled() || monCluster.CheckMonClusterState(cephv1alpha1.MonClusterLostQuorum)) &&
+		!instance.CheckMonState(cephv1alpha1.MonCleanup, cephv1alpha1.MonIdle) {
+
+		instance.Status.State = cephv1alpha1.MonCleanup
+		_, err = r.updateAndRequeue(instance)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 	}
 
 	switch instance.GetMonState() {
