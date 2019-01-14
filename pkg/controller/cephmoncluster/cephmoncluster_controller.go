@@ -181,7 +181,7 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
 
 	default:
-		instance.SetMonClusterState(cephv1alpha1.MonClusterIdle)
+		instance.SetMonClusterState(cephv1alpha1.MonClusterLostQuorum)
 		return r.updateAndRequeue(instance)
 	}
 }
