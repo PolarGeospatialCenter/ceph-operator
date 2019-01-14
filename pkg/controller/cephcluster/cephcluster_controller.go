@@ -4,6 +4,7 @@ import (
 	"context"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
+	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -200,6 +201,20 @@ func (r *ReconcileCephCluster) Reconcile(request reconcile.Request) (reconcile.R
 		}
 	}
 
+	// Create MonCluster
+	monCluster := &cephv1alpha1.CephMonCluster{}
+
+	monCluster.Name = instance.GetName()
+	monCluster.Namespace = instance.GetNamespace()
+	monCluster.Spec.ClusterName = instance.GetName()
+
+	common.UpdateOwnerReferences(instance, monCluster)
+
+	err = r.createIfNotFound(monCluster)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
 	// Launch MGR
 
 	// Launch MDS
@@ -208,4 +223,12 @@ func (r *ReconcileCephCluster) Reconcile(request reconcile.Request) (reconcile.R
 
 	return reconcile.Result{}, nil
 
+}
+
+func (r *ReconcileCephCluster) createIfNotFound(o runtime.Object) error {
+	err := r.client.Create(context.TODO(), o)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return err
+	}
+	return nil
 }
