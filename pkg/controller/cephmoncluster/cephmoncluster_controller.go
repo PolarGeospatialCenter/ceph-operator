@@ -2,10 +2,8 @@ package cephmoncluster
 
 import (
 	"context"
-	"time"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -68,9 +66,8 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 	// TODO(user): Modify this to be the types you create that are owned by the primary resource
 	// Watch for changes to secondary resource Pods and requeue the owner CephMonCluster
-	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &cephv1alpha1.CephMonCluster{},
+	err = c.Watch(&source.Kind{Type: &cephv1alpha1.CephMon{}}, &handler.EnqueueRequestsFromMapFunc{
+		ToRequests: &MonEventMapper{},
 	})
 	if err != nil {
 		return err
@@ -116,16 +113,28 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 
 	case cephv1alpha1.MonClusterIdle:
 		if instance.Status.MonMapEmpty() {
-			return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
+			return reconcile.Result{}, nil
 		}
 
 		instance.SetMonClusterState(cephv1alpha1.MonClusterLaunching)
 		instance.Status.StartEpoch++
+
+		cm, err := instance.GetMonMapConfigMap()
+		cm.Namespace = instance.Namespace
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		_, err = r.createOrUpdate(cm)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
 		return r.updateAndRequeue(instance)
 
 	case cephv1alpha1.MonClusterLaunching:
 		if instance.Status.MonMapQuorumAtEpoch(instance.Status.StartEpoch) {
 			cm, err := instance.GetMonMapConfigMap()
+			cm.Namespace = instance.Namespace
 			if err != nil {
 				return reconcile.Result{}, err
 			}
@@ -151,7 +160,7 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 			return r.updateAndRequeue(instance)
 		}
 
-		return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
+		return reconcile.Result{}, nil
 
 	case cephv1alpha1.MonClusterInQuorum:
 		monitors, err := r.getMonitorsInMonMap(instance)
@@ -165,7 +174,7 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 			return r.updateAndRequeue(instance)
 		}
 
-		return reconcile.Result{Requeue: true, RequeueAfter: time.Second * 5}, nil
+		return reconcile.Result{}, nil
 
 	case cephv1alpha1.MonClusterLostQuorum:
 		monitors, err := r.getMonitorsInMonMap(instance)
@@ -178,7 +187,7 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 			return r.updateAndRequeue(instance)
 		}
 
-		return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
+		return reconcile.Result{}, nil
 
 	default:
 		instance.SetMonClusterState(cephv1alpha1.MonClusterLostQuorum)
@@ -208,7 +217,7 @@ func (r *ReconcileCephMonCluster) updateAndRequeue(object runtime.Object) (recon
 	if err != nil {
 		return reconcile.Result{}, err
 	}
-	return reconcile.Result{Requeue: true}, nil
+	return reconcile.Result{}, nil
 }
 
 func (r *ReconcileCephMonCluster) createOrUpdate(object runtime.Object) (reconcile.Result, error) {

@@ -3,7 +3,6 @@ package cephmon
 import (
 	"context"
 	"net"
-	"time"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
 	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common"
@@ -50,7 +49,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// TODO(user): Modify this to be the types you create that are owned by the primary resource
 	// Watch for changes to secondary resource Pods and requeue the owner CephMon
 	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
+		IsController: false,
 		OwnerType:    &cephv1alpha1.CephMon{},
 	})
 	if err != nil {
@@ -88,7 +87,7 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		if errors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			// Return and don't requeue
+			// Return and don't
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
@@ -118,7 +117,7 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 	}
 
 	// Check for disabled or lost quorum states
-	if (instance.GetDisabled() || monCluster.CheckMonClusterState(cephv1alpha1.MonClusterLostQuorum)) &&
+	if (instance.GetDisabled() || monCluster.CheckMonClusterState(cephv1alpha1.MonClusterLostQuorum, cephv1alpha1.MonClusterIdle)) &&
 		!instance.CheckMonState(cephv1alpha1.MonCleanup, cephv1alpha1.MonIdle) {
 
 		instance.Status.State = cephv1alpha1.MonCleanup
@@ -147,6 +146,9 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		return r.updateAndRequeue(instance)
 
 	case cephv1alpha1.MonIdle:
+		if instance.GetDisabled() {
+			return reconcile.Result{}, nil
+		}
 		switch monCluster.GetMonClusterState() {
 		case cephv1alpha1.MonClusterInQuorum:
 			instance.Status.State = cephv1alpha1.MonLaunchPod
@@ -170,7 +172,7 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 				}
 			}
 		default:
-			return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
+			return reconcile.Result{}, nil
 		}
 
 		err = r.client.Update(context.TODO(), instance)
@@ -178,7 +180,7 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 			return reconcile.Result{}, err
 		}
 
-		return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
+		return reconcile.Result{Requeue: true}, nil
 
 	case cephv1alpha1.MonLaunchPod:
 		if !monCluster.CheckMonClusterState(cephv1alpha1.MonClusterInQuorum,
@@ -186,7 +188,7 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 			cephv1alpha1.MonClusterLaunching) {
 			log.Info("Refusing to launch monitor while cluster is unexpected state",
 				"ClusterState", monCluster.GetMonClusterState(), "MonitorId", instance.Spec.ID)
-			return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, nil
+			return reconcile.Result{}, nil
 		}
 		// Create PVC
 		pvc, err := instance.GetVolumeClaimTemplate()
@@ -202,16 +204,13 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 			return reconcile.Result{}, err
 		}
 
-		monitorDiscoveryServiceName := cluster.GetMonitorDiscoveryService().GetName()
-
 		// Create Pod
-		pod := instance.GetPod(cluster.GetMonImage(), cluster.GetCephConfigMapName(),
-			monitorDiscoveryServiceName, request.Namespace, cluster.Spec.ClusterDomain)
+		pod := instance.GetPod(cluster, monCluster)
 		pod.Namespace = request.Namespace
 		common.UpdateOwnerReferences(instance, pod)
 
 		err = r.client.Create(context.TODO(), pod)
-		if err != nil && !errors.IsAlreadyExists(err) {
+		if err != nil {
 			return reconcile.Result{}, err
 		}
 
@@ -228,40 +227,33 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 	case cephv1alpha1.MonWaitForPodRun:
 		updated, err := r.updateMonMapOnPodStatus(monCluster, instance, podRunning)
 		if !updated || err != nil {
-			return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, err
+			return reconcile.Result{}, err
 		}
 		instance.Status.State = cephv1alpha1.MonWaitForPodReady
+		instance.Status.StartEpoch = monCluster.Status.StartEpoch
 		return r.updateAndRequeue(instance)
 
 	case cephv1alpha1.MonWaitForPodReady:
 		updated, err := r.updateMonMapOnPodStatus(monCluster, instance, podInQuorum)
 		if !updated || err != nil {
-			return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, err
+			return reconcile.Result{}, err
 		}
 		instance.Status.State = cephv1alpha1.MonInQuorum
+		instance.Status.StartEpoch = monCluster.Status.StartEpoch
 		return r.updateAndRequeue(instance)
 	case cephv1alpha1.MonInQuorum:
 		quorum, _, err := r.checkPod(instance.GetPodName(), instance.Namespace, podInQuorum)
 		if quorum || err != nil {
-			return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, err
+			return reconcile.Result{}, err
 		}
 		// out of quorum with no error
 		instance.Status.State = cephv1alpha1.MonCleanup
 		return r.updateAndRequeue(instance)
+
+	default:
+		instance.Status.State = cephv1alpha1.MonCleanup
+		return r.updateAndRequeue(instance)
 	}
-
-	// Attach ENV Vars to Pod
-	// Cmd
-	// Cluster
-	// MonIP
-	// MonName
-	// k8snamespace
-	// Attach ceph.conf Configmap to Pod
-	// Attach Labels for service
-	// Attach bootstrap keyrings?
-
-	return reconcile.Result{}, nil
-
 }
 
 type podCheckFunc func(*corev1.Pod) bool
@@ -300,7 +292,7 @@ func (r *ReconcileCephMon) updateAndRequeue(object runtime.Object) (reconcile.Re
 	if err != nil {
 		return reconcile.Result{}, err
 	}
-	return reconcile.Result{Requeue: true}, nil
+	return reconcile.Result{}, nil
 }
 
 func (r *ReconcileCephMon) createOrUpdate(object runtime.Object) (reconcile.Result, error) {
@@ -332,6 +324,7 @@ func (r *ReconcileCephMon) updateMonMapOnPodStatus(monCluster *cephv1alpha1.Ceph
 	monMapEntry := cephv1alpha1.MonMapEntry{
 		IP:         podIP,
 		Port:       6789,
+		PodName:    instance.GetPodName(),
 		StartEpoch: monCluster.Status.StartEpoch,
 	}
 	err = r.updateMonMap(monCluster, instance.Spec.ID, monMapEntry)

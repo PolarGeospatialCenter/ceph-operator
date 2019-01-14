@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -35,8 +36,9 @@ const (
 
 // CephMonStatus defines the observed state of CephMon
 type CephMonStatus struct {
-	Healthy bool     `json:"healthy"`
-	State   MonState `json:"monState"`
+	Healthy    bool     `json:"healthy"`
+	StartEpoch int      `json:"startEpoch"`
+	State      MonState `json:"monState"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -101,7 +103,7 @@ func (m *CephMon) GetPodName() string {
 	return fmt.Sprintf("ceph-%s", m.GetName())
 }
 
-func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, namespace, clusterDomain string) *corev1.Pod {
+func (m *CephMon) GetPod(cluster *CephCluster, monCluster *CephMonCluster) *corev1.Pod {
 	pod := &corev1.Pod{}
 
 	pod.APIVersion = "v1"
@@ -113,7 +115,7 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, name
 
 	container := corev1.Container{}
 	container.Name = "ceph-mon"
-	container.Image = monImage
+	container.Image = cluster.Spec.MonImage.String()
 	container.Env = []corev1.EnvVar{
 		corev1.EnvVar{
 			Name:  "CMD",
@@ -131,6 +133,10 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, name
 			Name:  "MON_ID",
 			Value: m.Spec.ID,
 		},
+		corev1.EnvVar{
+			Name:  "MON_CLUSTER_START_EPOCH",
+			Value: strconv.Itoa(monCluster.Status.StartEpoch),
+		},
 	}
 
 	container.VolumeMounts = []corev1.VolumeMount{
@@ -142,9 +148,36 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, name
 			Name:      "ceph-mon-data",
 			MountPath: "/mon",
 		},
+		corev1.VolumeMount{
+			Name:      "moncluster-configmap",
+			MountPath: "/config/moncluster",
+		},
 	}
 
 	container.ImagePullPolicy = corev1.PullAlways
+
+	handler := corev1.Handler{
+		Exec: &corev1.ExecAction{
+			Command: []string{
+				"/ceph/bin/mon_health.sh",
+			},
+		},
+	}
+
+	container.ReadinessProbe = &corev1.Probe{
+		Handler:             handler,
+		InitialDelaySeconds: 5,
+		PeriodSeconds:       10,
+		FailureThreshold:    50,
+		TimeoutSeconds:      5,
+	}
+
+	// container.LivenessProbe = &corev1.Probe{
+	// 	Handler:             handler,
+	// 	InitialDelaySeconds: 15,
+	// 	PeriodSeconds:       30,
+	// 	TimeoutSeconds:      5,
+	// }
 
 	pod.Spec.Containers = []corev1.Container{container}
 
@@ -162,7 +195,17 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, name
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: cephConfConfigMap,
+						Name: cluster.GetCephConfigMapName(),
+					},
+				},
+			},
+		},
+		corev1.Volume{
+			Name: "moncluster-configmap",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: monCluster.GetConfigMapName(),
 					},
 				},
 			},
@@ -171,7 +214,8 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, name
 
 	pod.Spec.DNSConfig = &corev1.PodDNSConfig{
 		Searches: []string{
-			fmt.Sprintf("%s.%s.svc.%s", discoveryServiceName, namespace, clusterDomain),
+			fmt.Sprintf("%s.%s.svc.%s", cluster.GetMonitorDiscoveryService().GetName(),
+				cluster.GetNamespace(), cluster.Spec.ClusterDomain),
 		},
 	}
 

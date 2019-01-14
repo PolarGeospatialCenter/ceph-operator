@@ -215,13 +215,15 @@ func (r *ReconcileCephCluster) Reconcile(request reconcile.Request) (reconcile.R
 		return reconcile.Result{}, err
 	}
 
+	instance.Status.MonClusterName = instance.GetName()
+
 	// Launch MGR
 
 	// Launch MDS
 
 	// Launch RGW?
 
-	return reconcile.Result{}, nil
+	return r.update(instance)
 
 }
 
@@ -231,4 +233,12 @@ func (r *ReconcileCephCluster) createIfNotFound(o runtime.Object) error {
 		return err
 	}
 	return nil
+}
+
+func (r *ReconcileCephCluster) update(object runtime.Object) (reconcile.Result, error) {
+	err := r.client.Update(context.TODO(), object)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	return reconcile.Result{}, nil
 }

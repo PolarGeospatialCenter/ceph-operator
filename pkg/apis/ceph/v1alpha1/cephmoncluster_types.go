@@ -14,6 +14,8 @@ type CephMonClusterSpec struct {
 	ClusterName string `json:"clusterName"`
 }
 
+type JsonMonMap MonMap
+
 type MonMap map[string]MonMapEntry
 
 type MonMapEntry struct {
@@ -23,8 +25,8 @@ type MonMapEntry struct {
 	StartEpoch int
 }
 
-func (m MonMap) MarshalJSON() ([]byte, error) {
-	out := make([]map[string]string, len(m))
+func (m JsonMonMap) MarshalJSON() ([]byte, error) {
+	out := make([]map[string]string, 0, len(m))
 
 	for k, v := range m {
 		out = append(out, map[string]string{
@@ -139,11 +141,11 @@ func (c *CephMonCluster) GetMonMapConfigMap() (*corev1.ConfigMap, error) {
 	cm := &corev1.ConfigMap{}
 
 	data := struct {
-		StartEpoch int    `json:"startEpoch"`
-		MonMap     MonMap `json:"monMap"`
+		StartEpoch int        `json:"startEpoch"`
+		MonMap     JsonMonMap `json:"monMap"`
 	}{
 		StartEpoch: c.Status.StartEpoch,
-		MonMap:     c.Status.MonMap,
+		MonMap:     JsonMonMap(c.Status.MonMap),
 	}
 
 	jsonData, err := json.Marshal(data)
@@ -151,12 +153,16 @@ func (c *CephMonCluster) GetMonMapConfigMap() (*corev1.ConfigMap, error) {
 		return nil, err
 	}
 
-	cm.Name = fmt.Sprintf("%s-monmap", c.GetName())
+	cm.Name = c.GetConfigMapName()
 	cm.Data = map[string]string{
 		"jsonMonMap": string(jsonData),
 	}
 
 	return cm, nil
+}
+
+func (c *CephMonCluster) GetConfigMapName() string {
+	return fmt.Sprintf("%s-monmap", c.GetName())
 }
 
 func (c *CephMonCluster) GetMonClusterState() MonClusterState {
