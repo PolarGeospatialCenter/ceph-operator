@@ -172,3 +172,19 @@ func (c *CephCluster) GetMonitorDiscoveryService() *corev1.Service {
 
 	return svc
 }
+
+func (c *CephCluster) GetAPIVersion() string {
+	return c.APIVersion
+}
+
+func (c *CephCluster) SetAPIVersion(version string) {
+	c.APIVersion = version
+}
+
+func (c *CephCluster) GetKind() string {
+	return c.Kind
+}
+
+func (c *CephCluster) SetKind(kind string) {
+	c.Kind = kind
+}
