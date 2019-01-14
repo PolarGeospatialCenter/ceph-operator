@@ -92,6 +92,9 @@ func (c *CephCluster) GetCephConfigMap() (*corev1.ConfigMap, error) {
 		}
 		for k, v := range sectionMap {
 			_, err = section.NewKey(k, v)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
