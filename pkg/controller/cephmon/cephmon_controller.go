@@ -228,7 +228,7 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 	case cephv1alpha1.MonWaitForPodRun:
 		updated, err := r.updateMonMapOnPodStatus(monCluster, instance, podRunning)
 		if !updated || err != nil {
-			return reconcile.Result{}, err
+			return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, err
 		}
 		instance.Status.State = cephv1alpha1.MonWaitForPodReady
 		return r.updateAndRequeue(instance)
@@ -236,14 +236,14 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 	case cephv1alpha1.MonWaitForPodReady:
 		updated, err := r.updateMonMapOnPodStatus(monCluster, instance, podInQuorum)
 		if !updated || err != nil {
-			return reconcile.Result{}, err
+			return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, err
 		}
 		instance.Status.State = cephv1alpha1.MonInQuorum
 		return r.updateAndRequeue(instance)
 	case cephv1alpha1.MonInQuorum:
 		quorum, _, err := r.checkPod(instance.GetPodName(), instance.Namespace, podInQuorum)
 		if quorum || err != nil {
-			return reconcile.Result{}, err
+			return reconcile.Result{Requeue: true, RequeueAfter: time.Second}, err
 		}
 		// out of quorum with no error
 		instance.Status.State = cephv1alpha1.MonCleanup
