@@ -156,12 +156,12 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		case cephv1alpha1.MonClusterIdle:
 			// Update Monmap
 			if monCluster.Status.MonMapEmpty() {
-				err := r.updateMonMap(monCluster, instance.Spec.ID, cephv1alpha1.MonMapEntry{
+				err = r.updateMonMap(monCluster, instance.Spec.ID, cephv1alpha1.MonMapEntry{
 					Port: 6789,
 				})
 				if errors.IsConflict(err) {
 					// Another monitor beat us to the update, retry
-					return reconcile.Result{Requeue: true}, err
+					return reconcile.Result{Requeue: true}, nil
 				} else if err != nil {
 					return reconcile.Result{}, err
 				}
