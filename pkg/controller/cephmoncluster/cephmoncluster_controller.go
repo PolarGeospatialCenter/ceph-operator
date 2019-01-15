@@ -18,27 +18,6 @@ import (
 
 var log = logf.Log.WithName("controller_cephmoncluster")
 
-type monitorList []cephv1alpha1.CephMon
-
-func (m monitorList) allInState(state cephv1alpha1.MonState) bool {
-	for _, mon := range m {
-		if mon.Status.State != state {
-			return false
-		}
-	}
-	return true
-}
-
-func (m monitorList) countInState(state cephv1alpha1.MonState) int {
-	var count int
-	for _, mon := range m {
-		if mon.Status.State == state {
-			count++
-		}
-	}
-	return count
-}
-
 // Add creates a new CephMonCluster Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager) error {
@@ -109,17 +88,24 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, err
 	}
 
+	fullMonMap, err := r.getMonMap(instance)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	monMap := fullMonMap.GetInitalMonMap()
+
 	switch instance.GetMonClusterState() {
 
 	case cephv1alpha1.MonClusterIdle:
-		if instance.Status.MonMapEmpty() {
+		if fullMonMap.Empty() {
 			return reconcile.Result{}, nil
 		}
 
 		instance.SetMonClusterState(cephv1alpha1.MonClusterLaunching)
 		instance.Status.StartEpoch++
 
-		cm, err := instance.GetMonMapConfigMap()
+		cm, err := instance.GetMonMapConfigMap(monMap)
 		cm.Namespace = instance.Namespace
 		if err != nil {
 			return reconcile.Result{}, err
@@ -129,11 +115,29 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 			return reconcile.Result{}, err
 		}
 
-		return r.updateAndRequeue(instance)
+		_, err = r.updateAndRequeue(instance)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		if fullMonMap.CountInitalMembers() > 0 {
+			return reconcile.Result{}, nil
+		}
+
+		initialMonNamespacedName := fullMonMap.GetRandomEntry().NamespacedName
+		initialMon := &cephv1alpha1.CephMon{}
+
+		err = r.client.Get(context.TODO(), initialMonNamespacedName, initialMon)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		initialMon.Status.InitalMember = true
+		return r.updateAndRequeue(initialMon)
 
 	case cephv1alpha1.MonClusterLaunching:
-		if instance.Status.MonMapQuorumAtEpoch(instance.Status.StartEpoch) {
-			cm, err := instance.GetMonMapConfigMap()
+		if monMap.QuorumAtEpoch(instance.Status.StartEpoch) {
+			cm, err := instance.GetMonMapConfigMap(monMap)
 			cm.Namespace = instance.Namespace
 			if err != nil {
 				return reconcile.Result{}, err
@@ -149,13 +153,9 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, nil
 
 	case cephv1alpha1.MonClusterEstablishingQuorum:
-		monitors, err := r.getMonitorsInMonMap(instance)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
 
-		totalInQuorum := monitors.countInState(cephv1alpha1.MonInQuorum)
-		if totalInQuorum >= instance.Status.MonMapQuorumCount() {
+		totalInQuorum := monMap.CountInState(cephv1alpha1.MonInQuorum)
+		if totalInQuorum >= monMap.QuorumCount() {
 			instance.SetMonClusterState(cephv1alpha1.MonClusterInQuorum)
 			return r.updateAndRequeue(instance)
 		}
@@ -163,13 +163,9 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, nil
 
 	case cephv1alpha1.MonClusterInQuorum:
-		monitors, err := r.getMonitorsInMonMap(instance)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
 
-		totalInQuorum := monitors.countInState(cephv1alpha1.MonInQuorum)
-		if totalInQuorum < instance.Status.MonMapQuorumCount() {
+		totalInQuorum := monMap.CountInState(cephv1alpha1.MonInQuorum)
+		if totalInQuorum < monMap.QuorumCount() {
 			instance.SetMonClusterState(cephv1alpha1.MonClusterLostQuorum)
 			return r.updateAndRequeue(instance)
 		}
@@ -177,12 +173,8 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, nil
 
 	case cephv1alpha1.MonClusterLostQuorum:
-		monitors, err := r.getMonitorsInMonMap(instance)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
 
-		if monitors.allInState(cephv1alpha1.MonIdle) {
+		if monMap.AllInState(cephv1alpha1.MonIdle) {
 			instance.SetMonClusterState(cephv1alpha1.MonClusterIdle)
 			return r.updateAndRequeue(instance)
 		}
@@ -195,21 +187,23 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 	}
 }
 
-func (r *ReconcileCephMonCluster) getMonitorsInMonMap(instance *cephv1alpha1.CephMonCluster) (monitorList, error) {
+func (r *ReconcileCephMonCluster) getMonMap(instance *cephv1alpha1.CephMonCluster) (cephv1alpha1.MonMap, error) {
 	monitors := &cephv1alpha1.CephMonList{}
-	err := r.client.List(context.TODO(), &client.ListOptions{}, monitors)
+	listOptions := &client.ListOptions{}
+	listOptions.MatchingLabels(map[string]string{cephv1alpha1.MonitorClusterLabel: instance.Spec.ClusterName})
+
+	err := r.client.List(context.TODO(), listOptions, monitors)
 	if err != nil {
 		return nil, err
 	}
 
-	matchingMonitors := make(monitorList, 0, len(monitors.Items))
+	monMap := make(cephv1alpha1.MonMap, len(monitors.Items))
+
 	for _, mon := range monitors.Items {
-		if instance.Status.MonMapContains(&mon) {
-			matchingMonitors = append(matchingMonitors, mon)
-		}
+		monMap[mon.Spec.ID] = mon.GetMonMapEntry()
 	}
 
-	return matchingMonitors, nil
+	return monMap, nil
 }
 
 func (r *ReconcileCephMonCluster) updateAndRequeue(object runtime.Object) (reconcile.Result, error) {
@@ -222,7 +216,7 @@ func (r *ReconcileCephMonCluster) updateAndRequeue(object runtime.Object) (recon
 
 func (r *ReconcileCephMonCluster) createOrUpdate(object runtime.Object) (reconcile.Result, error) {
 	err := r.client.Create(context.TODO(), object)
-	if err != nil && !errors.IsAlreadyExists(err) {
+	if !errors.IsAlreadyExists(err) {
 		return reconcile.Result{}, err
 	}
 

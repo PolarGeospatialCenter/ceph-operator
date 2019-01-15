@@ -2,7 +2,10 @@ package v1alpha1
 
 import (
 	"fmt"
+	"net"
 	"strconv"
+
+	"k8s.io/apimachinery/pkg/types"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -17,6 +20,7 @@ type CephMonSpec struct {
 	ID               string `json:"id"`
 	PvSelectorString string `json:"pvSelectorString"`
 	Disabled         bool   `json:"disabled"`
+	Port             int    `json:"port"`
 }
 
 // MonState describes the state of the monitor
@@ -36,9 +40,10 @@ const (
 
 // CephMonStatus defines the observed state of CephMon
 type CephMonStatus struct {
-	Healthy    bool     `json:"healthy"`
-	StartEpoch int      `json:"startEpoch"`
-	State      MonState `json:"monState"`
+	StartEpoch   int      `json:"startEpoch"`
+	State        MonState `json:"monState"`
+	PodIP        net.IP   `json:"podIP"`
+	InitalMember bool     `json:"initalMember"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -260,4 +265,25 @@ func (c *CephMon) CheckMonState(state ...MonState) bool {
 	}
 
 	return false
+}
+
+func (c *CephMon) GetPort() int {
+	if c.Spec.Port == 0 {
+		return 6789
+	}
+	return c.Spec.Port
+}
+
+func (c *CephMon) GetMonMapEntry() MonMapEntry {
+	return MonMapEntry{
+		IP:           c.Status.PodIP,
+		Port:         c.GetPort(),
+		StartEpoch:   c.Status.StartEpoch,
+		State:        c.Status.State,
+		InitalMember: c.Status.InitalMember,
+		NamespacedName: types.NamespacedName{
+			Name:      c.GetName(),
+			Namespace: c.GetNamespace(),
+		},
+	}
 }

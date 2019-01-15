@@ -56,6 +56,13 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	err = c.Watch(&source.Kind{Type: &cephv1alpha1.CephMonCluster{}}, &handler.EnqueueRequestsFromMapFunc{
+		ToRequests: &MonClusterEventMapper{client: mgr.GetClient(), scheme: mgr.GetScheme()},
+	})
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -92,6 +99,17 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		}
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
+	}
+
+	// Label ourselves with our clustername
+	monLabels := instance.GetLabels()
+	if monLabels == nil {
+		monLabels = make(map[string]string)
+	}
+	if val, ok := monLabels[cephv1alpha1.MonitorClusterLabel]; !ok || val != instance.Spec.ClusterName {
+		monLabels[cephv1alpha1.MonitorClusterLabel] = instance.Spec.ClusterName
+		instance.SetLabels(monLabels)
+		return r.updateAndRequeue(instance)
 	}
 
 	// Lookup cluster
@@ -154,23 +172,10 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 			instance.Status.State = cephv1alpha1.MonLaunchPod
 
 		case cephv1alpha1.MonClusterLaunching:
-			if monCluster.Status.MonMapContains(instance) {
+			if instance.Status.InitalMember {
 				instance.Status.State = cephv1alpha1.MonLaunchPod
 			}
 
-		case cephv1alpha1.MonClusterIdle:
-			// Update Monmap
-			if monCluster.Status.MonMapEmpty() {
-				err = r.updateMonMap(monCluster, instance.Spec.ID, cephv1alpha1.MonMapEntry{
-					Port: 6789,
-				})
-				if errors.IsConflict(err) {
-					// Another monitor beat us to the update, retry
-					return reconcile.Result{Requeue: true}, nil
-				} else if err != nil {
-					return reconcile.Result{}, err
-				}
-			}
 		default:
 			return reconcile.Result{}, nil
 		}
@@ -225,22 +230,28 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		return r.updateAndRequeue(instance)
 
 	case cephv1alpha1.MonWaitForPodRun:
-		updated, err := r.updateMonMapOnPodStatus(monCluster, instance, podRunning)
-		if !updated || err != nil {
+		running, podIP, err := r.checkPod(instance.GetPodName(), instance.GetNamespace(), podRunning)
+		if !running || err != nil {
 			return reconcile.Result{}, err
 		}
+
 		instance.Status.State = cephv1alpha1.MonWaitForPodReady
+		instance.Status.PodIP = podIP
 		instance.Status.StartEpoch = monCluster.Status.StartEpoch
 		return r.updateAndRequeue(instance)
 
 	case cephv1alpha1.MonWaitForPodReady:
-		updated, err := r.updateMonMapOnPodStatus(monCluster, instance, podInQuorum)
-		if !updated || err != nil {
+		quorum, podIP, err := r.checkPod(instance.GetPodName(), instance.GetNamespace(), podInQuorum)
+		if !quorum || err != nil {
 			return reconcile.Result{}, err
 		}
+
 		instance.Status.State = cephv1alpha1.MonInQuorum
+		instance.Status.PodIP = podIP
 		instance.Status.StartEpoch = monCluster.Status.StartEpoch
+		instance.Status.InitalMember = true
 		return r.updateAndRequeue(instance)
+
 	case cephv1alpha1.MonInQuorum:
 		quorum, _, err := r.checkPod(instance.GetPodName(), instance.Namespace, podInQuorum)
 		if quorum || err != nil {
@@ -307,34 +318,4 @@ func (r *ReconcileCephMon) createOrUpdate(object runtime.Object) (reconcile.Resu
 	}
 
 	return reconcile.Result{}, nil
-}
-
-// updatesMonMapOnPodStatus checks the status of our monitor pod using the provided podCheckFunc,
-// if the function returns true the monCluster MonMap is updated.  Returns true iff the MonMap was updated.
-func (r *ReconcileCephMon) updateMonMapOnPodStatus(monCluster *cephv1alpha1.CephMonCluster, instance *cephv1alpha1.CephMon, checkFunc podCheckFunc) (bool, error) {
-	status, podIP, err := r.checkPod(instance.GetPodName(), instance.Namespace, checkFunc)
-	if err != nil {
-		return false, err
-	}
-
-	if !status {
-		return false, nil
-	}
-
-	monMapEntry := cephv1alpha1.MonMapEntry{
-		IP:         podIP,
-		Port:       6789,
-		PodName:    instance.GetPodName(),
-		StartEpoch: monCluster.Status.StartEpoch,
-	}
-	err = r.updateMonMap(monCluster, instance.Spec.ID, monMapEntry)
-	if err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func (r *ReconcileCephMon) updateMonMap(monCluster *cephv1alpha1.CephMonCluster, id string, e cephv1alpha1.MonMapEntry) error {
-	monCluster.Status.MonMapUpdate(id, e)
-	return r.client.Update(context.TODO(), monCluster)
 }

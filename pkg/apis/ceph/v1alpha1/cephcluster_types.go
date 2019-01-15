@@ -11,6 +11,7 @@ import (
 )
 
 const MonitorServiceLabel = "ceph.k8s.pgc.umn.edu/monitorService"
+const MonitorClusterLabel = "ceph.k8s.pgc.umn.edu/cluster"
 
 // CephClusterSpec defines the desired state of CephCluster
 type CephClusterSpec struct {
