@@ -2,6 +2,7 @@ package cephmon
 
 import (
 	"context"
+	"fmt"
 	"net"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
@@ -246,6 +247,10 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 
 	case cephv1alpha1.MonWaitForPodRun:
 		running, podIP, err := r.checkPod(instance.GetPodName(), instance.GetNamespace(), podRunning)
+		if errors.IsNotFound(err) {
+			instance.Status.State = cephv1alpha1.MonError
+			return r.updateAndRequeue(instance)
+		}
 		if !running || err != nil {
 			return reconcile.Result{}, err
 		}
@@ -257,6 +262,10 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 
 	case cephv1alpha1.MonWaitForPodReady:
 		quorum, podIP, err := r.checkPod(instance.GetPodName(), instance.GetNamespace(), podInQuorum)
+		if errors.IsNotFound(err) {
+			instance.Status.State = cephv1alpha1.MonError
+			return r.updateAndRequeue(instance)
+		}
 		if !quorum || err != nil {
 			return reconcile.Result{}, err
 		}
@@ -269,6 +278,10 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 
 	case cephv1alpha1.MonInQuorum:
 		quorum, _, err := r.checkPod(instance.GetPodName(), instance.Namespace, podInQuorum)
+		if errors.IsNotFound(err) {
+			instance.Status.State = cephv1alpha1.MonError
+			return r.updateAndRequeue(instance)
+		}
 		if quorum || err != nil {
 			return reconcile.Result{}, err
 		}
@@ -290,9 +303,7 @@ func (r *ReconcileCephMon) checkPod(podName, namespace string, checkFunc podChec
 		Name:      podName,
 		Namespace: namespace,
 	}, pod)
-	if errors.IsNotFound(err) {
-		return false, net.IP{}, nil
-	} else if err != nil {
+	if err != nil {
 		return false, net.IP{}, err
 	}
 	podIP := net.ParseIP(pod.Status.PodIP)
