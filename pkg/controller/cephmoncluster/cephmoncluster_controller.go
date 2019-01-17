@@ -150,6 +150,7 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 			instance.SetMonClusterState(cephv1alpha1.MonClusterEstablishingQuorum)
 			return r.updateAndRequeue(instance)
 		}
+
 		return reconcile.Result{}, nil
 
 	case cephv1alpha1.MonClusterEstablishingQuorum:
@@ -157,6 +158,11 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 		totalInQuorum := monMap.CountInState(cephv1alpha1.MonInQuorum)
 		if totalInQuorum >= monMap.QuorumCount() {
 			instance.SetMonClusterState(cephv1alpha1.MonClusterInQuorum)
+			return r.updateAndRequeue(instance)
+		}
+		totalInIdle := monMap.CountInState(cephv1alpha1.MonIdle)
+		if totalInIdle >= monMap.QuorumCount() {
+			instance.SetMonClusterState(cephv1alpha1.MonClusterLostQuorum)
 			return r.updateAndRequeue(instance)
 		}
 
