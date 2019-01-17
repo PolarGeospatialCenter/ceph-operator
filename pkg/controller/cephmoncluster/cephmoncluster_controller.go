@@ -102,9 +102,6 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 			return reconcile.Result{}, nil
 		}
 
-		instance.SetMonClusterState(cephv1alpha1.MonClusterLaunching)
-		instance.Status.StartEpoch++
-
 		cm, err := instance.GetMonMapConfigMap(monMap)
 		cm.Namespace = instance.Namespace
 		if err != nil {
@@ -114,6 +111,9 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 		if err != nil {
 			return reconcile.Result{}, err
 		}
+
+		instance.SetMonClusterState(cephv1alpha1.MonClusterLaunching)
+		instance.Status.StartEpoch++
 
 		_, err = r.updateAndRequeue(instance)
 		if err != nil {
