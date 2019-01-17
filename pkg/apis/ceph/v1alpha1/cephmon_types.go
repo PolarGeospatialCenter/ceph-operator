@@ -27,10 +27,8 @@ type CephMonSpec struct {
 type MonState string
 
 const (
-	MonUnintilized     MonState = "Unintilized"
 	MonLaunchPod       MonState = "Launch Pod"
 	MonWaitForPodRun   MonState = "Wait for Pod Run"
-	MonNextEpoch       MonState = "Wait for next Epoch"
 	MonWaitForPodReady MonState = "Wait for Pod Ready"
 	MonInQuorum        MonState = "In Quorum"
 	MonError           MonState = "Error"
@@ -108,7 +106,7 @@ func (m *CephMon) GetPodName() string {
 	return fmt.Sprintf("ceph-%s", m.GetName())
 }
 
-func (m *CephMon) GetPod(cluster *CephCluster, monCluster *CephMonCluster) *corev1.Pod {
+func (m *CephMon) GetPod(cluster *CephCluster, monCluster *CephMonCluster, clientAdminKeyringName string) *corev1.Pod {
 	pod := &corev1.Pod{}
 
 	pod.APIVersion = "v1"
@@ -156,6 +154,10 @@ func (m *CephMon) GetPod(cluster *CephCluster, monCluster *CephMonCluster) *core
 		corev1.VolumeMount{
 			Name:      "moncluster-configmap",
 			MountPath: "/config/moncluster",
+		},
+		corev1.VolumeMount{
+			Name:      "client-admin-keyring",
+			MountPath: "/keyrings/client.admin",
 		},
 	}
 
@@ -212,6 +214,14 @@ func (m *CephMon) GetPod(cluster *CephCluster, monCluster *CephMonCluster) *core
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: monCluster.GetConfigMapName(),
 					},
+				},
+			},
+		},
+		corev1.Volume{
+			Name: "client-admin-keyring",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: clientAdminKeyringName,
 				},
 			},
 		},

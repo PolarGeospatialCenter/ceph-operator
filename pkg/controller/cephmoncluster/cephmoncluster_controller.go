@@ -190,7 +190,7 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 func (r *ReconcileCephMonCluster) getMonMap(instance *cephv1alpha1.CephMonCluster) (cephv1alpha1.MonMap, error) {
 	monitors := &cephv1alpha1.CephMonList{}
 	listOptions := &client.ListOptions{}
-	listOptions.MatchingLabels(map[string]string{cephv1alpha1.MonitorClusterLabel: instance.Spec.ClusterName})
+	listOptions.MatchingLabels(map[string]string{cephv1alpha1.ClusterNameLabel: instance.Spec.ClusterName})
 
 	err := r.client.List(context.TODO(), listOptions, monitors)
 	if err != nil {

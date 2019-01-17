@@ -10,8 +10,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-const MonitorServiceLabel = "ceph.k8s.pgc.umn.edu/monitorService"
-const MonitorClusterLabel = "ceph.k8s.pgc.umn.edu/cluster"
+const (
+	ClusterNameLabel    = "ceph.k8s.pgc.umn.edu/cluster"
+	MonitorServiceLabel = "ceph.k8s.pgc.umn.edu/monitorService"
+	KeyringEntityLabel  = "ceph.k8s.pgc.umn.edu/keyringEntity"
+)
 
 // CephClusterSpec defines the desired state of CephCluster
 type CephClusterSpec struct {

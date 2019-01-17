@@ -29,7 +29,7 @@ func (m *MonClusterEventMapper) Map(o handler.MapObject) []reconcile.Request {
 
 		monitors := &cephv1alpha1.CephMonList{}
 		listOptions := &client.ListOptions{}
-		listOptions.MatchingLabels(map[string]string{cephv1alpha1.MonitorClusterLabel: obj.Spec.ClusterName})
+		listOptions.MatchingLabels(map[string]string{cephv1alpha1.ClusterNameLabel: obj.Spec.ClusterName})
 
 		err := m.client.List(context.TODO(), listOptions, monitors)
 		if err != nil {

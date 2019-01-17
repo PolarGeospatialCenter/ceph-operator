@@ -106,8 +106,8 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 	if monLabels == nil {
 		monLabels = make(map[string]string)
 	}
-	if val, ok := monLabels[cephv1alpha1.MonitorClusterLabel]; !ok || val != instance.Spec.ClusterName {
-		monLabels[cephv1alpha1.MonitorClusterLabel] = instance.Spec.ClusterName
+	if val, ok := monLabels[cephv1alpha1.ClusterNameLabel]; !ok || val != instance.Spec.ClusterName {
+		monLabels[cephv1alpha1.ClusterNameLabel] = instance.Spec.ClusterName
 		instance.SetLabels(monLabels)
 		return r.updateAndRequeue(instance)
 	}
@@ -210,7 +210,22 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		}
 
 		// Create Pod
-		pod := instance.GetPod(cluster, monCluster)
+		adminKeyringSecretList := &corev1.SecretList{}
+		listOptions := &client.ListOptions{}
+		listOptions.MatchingLabels(map[string]string{
+			cephv1alpha1.ClusterNameLabel:   cluster.GetName(),
+			cephv1alpha1.KeyringEntityLabel: "client.admin",
+		})
+
+		err = r.client.List(context.TODO(), listOptions, adminKeyringSecretList)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		if len(adminKeyringSecretList.Items) != 1 {
+			return reconcile.Result{}, fmt.Errorf("expecting unique client admin keyring: found %d", len(adminKeyringSecretList.Items))
+		}
+
+		pod := instance.GetPod(cluster, monCluster, adminKeyringSecretList.Items[0].GetName())
 		pod.Namespace = request.Namespace
 		common.UpdateOwnerReferences(instance, pod)
 
