@@ -29,6 +29,12 @@ var (
 			"mon": "allow *",
 		},
 	}
+	BOOTSTRAP_OSD_KEYRING = Keyring{
+		Entity: "client.bootstrap-osd",
+		Caps: map[string]string{
+			"mon": "profile bootstrap-osd",
+		},
+	}
 )
 
 type Keyring struct {

@@ -4,13 +4,13 @@ import (
 	"context"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
-	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -96,6 +96,15 @@ func (r *ReconcileCephOsd) Reconcile(request reconcile.Request) (reconcile.Resul
 
 	// Return if disabled
 	if instance.GetDisabled() {
+
+		pod := &corev1.Pod{}
+		pod.Name = instance.GetPodName()
+		pod.Namespace = instance.GetNamespace()
+
+		err = r.client.Delete(context.TODO(), pod)
+		if err != nil && !errors.IsNotFound(err) {
+			return reconcile.Result{}, err
+		}
 		return reconcile.Result{}, nil
 	}
 
@@ -111,9 +120,15 @@ func (r *ReconcileCephOsd) Reconcile(request reconcile.Request) (reconcile.Resul
 	}
 
 	// Create PVC
-	pvc := instance.GetVolumeClaimTemplate()
+	pvc, err := instance.GetVolumeClaimTemplate()
+	if err != nil {
+		return reconcile.Result{}, err
+	}
 	pvc.Namespace = request.Namespace
-	common.UpdateOwnerReferences(instance, pvc)
+
+	if err = controllerutil.SetControllerReference(instance, pvc, r.scheme); err != nil {
+		return reconcile.Result{}, err
+	}
 
 	err = r.client.Create(context.TODO(), pvc)
 
@@ -122,9 +137,12 @@ func (r *ReconcileCephOsd) Reconcile(request reconcile.Request) (reconcile.Resul
 	}
 
 	// Create Pod
-	pod := instance.GetPod(cluster.GetOsdImage(), cluster.GetCephConfigMapName())
+	pod := instance.GetPod(cluster.GetOsdImage(), cluster.GetCephConfigMapName(), "ceph-operator-osd")
 	pod.Namespace = request.Namespace
-	common.UpdateOwnerReferences(instance, pod)
+
+	if err = controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
+		return reconcile.Result{}, err
+	}
 
 	err = r.client.Create(context.TODO(), pod)
 	if err != nil && !errors.IsAlreadyExists(err) {

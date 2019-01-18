@@ -201,6 +201,32 @@ func (r *ReconcileCephCluster) Reconcile(request reconcile.Request) (reconcile.R
 		}
 	}
 
+	// Generate Osd bootstrap Keyring
+	bootstrapOsdKeyring := BOOTSTRAP_OSD_KEYRING
+	bootstrapOsdSecret := &corev1.Secret{}
+	bootstrapOsdNamespacedName := &types.NamespacedName{
+		Namespace: request.Namespace,
+		Name:      bootstrapOsdKeyring.GetSecretName(instance.GetName()),
+	}
+	err = r.client.Get(context.TODO(), *bootstrapOsdNamespacedName, bootstrapOsdSecret)
+	if err != nil && !errors.IsNotFound(err) {
+		return reconcile.Result{}, err
+	}
+
+	if errors.IsNotFound(err) {
+		err = bootstrapOsdKeyring.GenerateKey()
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		bootstrapOsdSecret = bootstrapOsdKeyring.GetSecret(instance.GetName())
+		bootstrapOsdSecret.Namespace = request.Namespace
+		err = r.client.Create(context.TODO(), bootstrapOsdSecret)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+
 	// Create MonCluster
 	monCluster := &cephv1alpha1.CephMonCluster{}
 
