@@ -10,11 +10,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// CephMonClusterSpec defines the desired state of CephMonCluster
-type CephMonClusterSpec struct {
-	ClusterName string `json:"clusterName"`
-}
-
 type JsonMonMap MonMap
 
 type MonMap map[string]MonMapEntry
@@ -127,6 +122,13 @@ const (
 	MonClusterLostQuorum         MonClusterState = "Lost Quorum"
 )
 
+// CephMonClusterSpec defines the desired state of CephMonCluster
+type CephMonClusterSpec struct {
+	ClusterName           string    `json:"clusterName"`
+	Image                 ImageSpec `json:"image"`
+	CephConfConfigMapName string    `json:"cephConfConfigMapName"`
+}
+
 // CephMonClusterStatus defines the observed state of CephMonCluster
 type CephMonClusterStatus struct {
 	StartEpoch int             `json:"monStartEpoch"`
@@ -203,4 +205,32 @@ func (c *CephMonCluster) CheckMonClusterState(state ...MonClusterState) bool {
 	}
 
 	return false
+}
+
+func (c *CephMonCluster) SetCephClusterName(name string) {
+	c.Spec.ClusterName = name
+}
+
+func (c *CephMonCluster) GetCephClusterName() string {
+	return c.Spec.ClusterName
+}
+
+func (c *CephMonCluster) SetImage(image ImageSpec) {
+	c.Spec.Image = image
+}
+
+func (c *CephMonCluster) GetImage() ImageSpec {
+	return c.Spec.Image
+}
+
+func (c *CephMonCluster) SetCephConfConfigMapName(name string) {
+	c.Spec.CephConfConfigMapName = name
+}
+
+func (c *CephMonCluster) GetCephConfConfigMapName() string {
+	return c.Spec.CephConfConfigMapName
+}
+
+func (c *CephMonCluster) GetDaemonType() string {
+	return "mon"
 }

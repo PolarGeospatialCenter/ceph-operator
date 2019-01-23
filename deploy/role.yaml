@@ -45,5 +45,7 @@ rules:
   - cephmons
   - cephosds
   - cephmonclusters
+  - cephdaemonclusters
+  - cephdaemons
   verbs:
   - '*'

@@ -113,27 +113,28 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		return r.updateAndRequeue(instance)
 	}
 
-	// Lookup cluster
-	cluster := &cephv1alpha1.CephCluster{}
-	clusterNamespacedName := &types.NamespacedName{
-		Namespace: request.Namespace,
-		Name:      instance.Spec.ClusterName,
-	}
-	err = r.client.Get(context.TODO(), *clusterNamespacedName, cluster)
+	// Lookup monCluster
+	monClusterList := &cephv1alpha1.CephMonClusterList{}
+	monClusterListOptions := &client.ListOptions{}
+	monClusterListOptions.MatchingLabels(map[string]string{
+		cephv1alpha1.ClusterNameLabel: instance.Spec.ClusterName,
+	})
+	err = r.client.List(context.TODO(), monClusterListOptions, monClusterList)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	// Lookup monCluster
-	monCluster := &cephv1alpha1.CephMonCluster{}
-	monClusterNamespacedName := &types.NamespacedName{
-		Namespace: request.Namespace,
-		Name:      cluster.Status.MonClusterName,
+	monClusterCount := len(monClusterList.Items)
+	if monClusterCount > 1 {
+		return reconcile.Result{}, fmt.Errorf("found %d mon clusters, should only have 1", monClusterCount)
 	}
-	err = r.client.Get(context.TODO(), *monClusterNamespacedName, monCluster)
-	if err != nil {
-		return reconcile.Result{}, err
+
+	if monClusterCount == 0 {
+		reqLogger.Info("No mon cluster found. Ignoring until one exists...")
+		return reconcile.Result{}, nil
 	}
+
+	monCluster := &monClusterList.Items[0]
 
 	// Check for disabled or lost quorum states
 	if (instance.GetDisabled() || monCluster.CheckMonClusterState(cephv1alpha1.MonClusterLostQuorum, cephv1alpha1.MonClusterIdle)) &&
@@ -214,7 +215,7 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 		adminKeyringSecretList := &corev1.SecretList{}
 		listOptions := &client.ListOptions{}
 		listOptions.MatchingLabels(map[string]string{
-			cephv1alpha1.ClusterNameLabel:   cluster.GetName(),
+			cephv1alpha1.ClusterNameLabel:   instance.Spec.ClusterName,
 			cephv1alpha1.KeyringEntityLabel: "client.admin",
 		})
 
@@ -226,7 +227,7 @@ func (r *ReconcileCephMon) Reconcile(request reconcile.Request) (reconcile.Resul
 			return reconcile.Result{}, fmt.Errorf("expecting unique client admin keyring: found %d", len(adminKeyringSecretList.Items))
 		}
 
-		pod := instance.GetPod(cluster, monCluster, adminKeyringSecretList.Items[0].GetName())
+		pod := instance.GetPod(monCluster, adminKeyringSecretList.Items[0].GetName())
 		pod.Namespace = request.Namespace
 		common.UpdateOwnerReferences(instance, pod)
 

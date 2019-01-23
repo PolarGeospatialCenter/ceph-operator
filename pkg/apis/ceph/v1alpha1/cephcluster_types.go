@@ -12,12 +12,26 @@ import (
 
 const (
 	ClusterNameLabel    = "ceph.k8s.pgc.umn.edu/cluster"
+	DaemonTypeLabel     = "ceph.k8s.pgc.umn.edu/daemonType"
 	MonitorServiceLabel = "ceph.k8s.pgc.umn.edu/monitorService"
 	KeyringEntityLabel  = "ceph.k8s.pgc.umn.edu/keyringEntity"
 )
 
+type CephClusterState string
+
+const (
+	CephClusterDisabled        CephClusterState = "Disabled"
+	CephClusterIdle            CephClusterState = "Idle"
+	CephClusterLaunchMon       CephClusterState = "Launch Mon"
+	CephClusterLaunchCluster   CephClusterState = "Launch Cluster"
+	CephClusterRunning         CephClusterState = "Running"
+	CephClusterShutdownCluster CephClusterState = "Shutdown Cluster"
+	CephClusterShutdownMon     CephClusterState = "Shutdown Mon"
+)
+
 // CephClusterSpec defines the desired state of CephCluster
 type CephClusterSpec struct {
+	Disabled       bool                         `json:"disabled"`
 	Config         map[string]map[string]string `json:"config"`
 	Fsid           string                       `json:"fsid"`
 	MonServiceName string                       `json:"monServiceName"`
@@ -39,7 +53,8 @@ func (i ImageSpec) String() string {
 
 // CephClusterStatus defines the observed state of CephCluster
 type CephClusterStatus struct {
-	MonClusterName string `json:"monClusterName"`
+	MonClusterName string           `json:"monClusterName"`
+	State          CephClusterState `json:"state"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

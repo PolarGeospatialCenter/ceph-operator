@@ -106,7 +106,7 @@ func (m *CephMon) GetPodName() string {
 	return fmt.Sprintf("ceph-%s", m.GetName())
 }
 
-func (m *CephMon) GetPod(cluster *CephCluster, monCluster *CephMonCluster, clientAdminKeyringName string) *corev1.Pod {
+func (m *CephMon) GetPod(monCluster *CephMonCluster, clientAdminKeyringName string) *corev1.Pod {
 	pod := &corev1.Pod{}
 
 	pod.APIVersion = "v1"
@@ -118,7 +118,7 @@ func (m *CephMon) GetPod(cluster *CephCluster, monCluster *CephMonCluster, clien
 
 	container := corev1.Container{}
 	container.Name = "ceph-mon"
-	container.Image = cluster.Spec.MonImage.String()
+	container.Image = monCluster.GetImage().String()
 	container.Env = []corev1.EnvVar{
 		corev1.EnvVar{
 			Name:  "CMD",
@@ -203,7 +203,7 @@ func (m *CephMon) GetPod(cluster *CephCluster, monCluster *CephMonCluster, clien
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: cluster.GetCephConfigMapName(),
+						Name: monCluster.GetCephConfConfigMapName(),
 					},
 				},
 			},
@@ -225,13 +225,6 @@ func (m *CephMon) GetPod(cluster *CephCluster, monCluster *CephMonCluster, clien
 					SecretName: clientAdminKeyringName,
 				},
 			},
-		},
-	}
-
-	pod.Spec.DNSConfig = &corev1.PodDNSConfig{
-		Searches: []string{
-			fmt.Sprintf("%s.%s.svc.%s", cluster.GetMonitorDiscoveryService().GetName(),
-				cluster.GetNamespace(), cluster.Spec.ClusterDomain),
 		},
 	}
 

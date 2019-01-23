@@ -5,8 +5,10 @@ import (
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -98,6 +100,13 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 	switch instance.GetMonClusterState() {
 
 	case cephv1alpha1.MonClusterIdle:
+		for _, k := range []Keyring{MON_KEYRING, CLIENT_ADMIN_KEYRING} {
+			err := r.generateKeyringSecret(k, instance.GetNamespace(), instance.Spec.ClusterName)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		}
+
 		if fullMonMap.Empty() {
 			return reconcile.Result{}, nil
 		}
@@ -232,4 +241,32 @@ func (r *ReconcileCephMonCluster) createOrUpdate(object runtime.Object) (reconci
 	}
 
 	return reconcile.Result{}, nil
+}
+
+func (r *ReconcileCephMonCluster) generateKeyringSecret(keyring Keyring, namespace, clusterName string) error {
+	secret := &corev1.Secret{}
+	secretNamespacedName := &types.NamespacedName{
+		Namespace: namespace,
+		Name:      keyring.GetSecretName(clusterName),
+	}
+	err := r.client.Get(context.TODO(), *secretNamespacedName, secret)
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+
+	if errors.IsNotFound(err) {
+		err = keyring.GenerateKey()
+		if err != nil {
+			return err
+		}
+
+		secret = keyring.GetSecret(clusterName)
+		secret.Namespace = namespace
+		err = r.client.Create(context.TODO(), secret)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

@@ -2,15 +2,17 @@ package cephcluster
 
 import (
 	"context"
+	"fmt"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
-	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -94,163 +96,76 @@ func (r *ReconcileCephCluster) Reconcile(request reconcile.Request) (reconcile.R
 	}
 
 	// Create Configmap
-	// Merge defaults with the config stored in cluster object
-
-	configMap, err := instance.GetCephConfigMap()
+	err = r.updateCephConfConfigMap(instance)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
-	configMap.Namespace = request.Namespace
-
-	// Create or update configmap.
-
-	err = r.client.Create(context.TODO(), configMap)
-
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return reconcile.Result{}, err
-	}
-
-	// if errors.IsAlreadyExists(err) {
-	// 	err = r.client.Update(context.TODO(), configMap)
-	// 	if err != nil {
-	// 		return reconcile.Result{}, err
-	// 	}
-	// }
 
 	// Create or update monitor Service
 	svc := instance.GetMonitorService()
 	svc.Namespace = instance.Namespace
 
-	err = r.client.Create(context.TODO(), svc)
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return reconcile.Result{}, err
-	}
-
-	// if errors.IsAlreadyExists(err) {
-	// 	err = r.client.Update(context.TODO(), svc)
-	// 	if err != nil {
-	// 		return reconcile.Result{}, err
-	// 	}
-	// }
-
-	// Create or update monitor discovery svc
-	discoverySvc := instance.GetMonitorDiscoveryService()
-	discoverySvc.Namespace = instance.Namespace
-
-	err = r.client.Create(context.TODO(), discoverySvc)
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return reconcile.Result{}, err
-	}
-
-	// if errors.IsAlreadyExists(err) {
-	// 	err = r.client.Update(context.TODO(), discoverySvc)
-	// 	if err != nil {
-	// 		return reconcile.Result{}, err
-	// 	}
-	// }
-
-	// Generate Monitor Keyring
-	monKeyring := MON_KEYRING
-	monSecret := &corev1.Secret{}
-	monSecretNamespacedName := &types.NamespacedName{
-		Namespace: request.Namespace,
-		Name:      monKeyring.GetSecretName(instance.GetName()),
-	}
-	err = r.client.Get(context.TODO(), *monSecretNamespacedName, monSecret)
-	if err != nil && !errors.IsNotFound(err) {
-		return reconcile.Result{}, err
-	}
-
-	if errors.IsNotFound(err) {
-		err = monKeyring.GenerateKey()
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-
-		monSecret = monKeyring.GetSecret(instance.GetName())
-		monSecret.Namespace = request.Namespace
-		err = r.client.Create(context.TODO(), monSecret)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-	}
-
-	// Generate Admin Keyring
-	adminKeyring := CLIENT_ADMIN_KEYRING
-	adminSecret := &corev1.Secret{}
-	adminSecretNamespacedName := &types.NamespacedName{
-		Namespace: request.Namespace,
-		Name:      adminKeyring.GetSecretName(instance.GetName()),
-	}
-	err = r.client.Get(context.TODO(), *adminSecretNamespacedName, adminSecret)
-	if err != nil && !errors.IsNotFound(err) {
-		return reconcile.Result{}, err
-	}
-
-	if errors.IsNotFound(err) {
-		err = adminKeyring.GenerateKey()
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-
-		adminSecret = adminKeyring.GetSecret(instance.GetName())
-		adminSecret.Namespace = request.Namespace
-		err = r.client.Create(context.TODO(), adminSecret)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-	}
-
-	// Generate Osd bootstrap Keyring
-	bootstrapOsdKeyring := BOOTSTRAP_OSD_KEYRING
-	bootstrapOsdSecret := &corev1.Secret{}
-	bootstrapOsdNamespacedName := &types.NamespacedName{
-		Namespace: request.Namespace,
-		Name:      bootstrapOsdKeyring.GetSecretName(instance.GetName()),
-	}
-	err = r.client.Get(context.TODO(), *bootstrapOsdNamespacedName, bootstrapOsdSecret)
-	if err != nil && !errors.IsNotFound(err) {
-		return reconcile.Result{}, err
-	}
-
-	if errors.IsNotFound(err) {
-		err = bootstrapOsdKeyring.GenerateKey()
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-
-		bootstrapOsdSecret = bootstrapOsdKeyring.GetSecret(instance.GetName())
-		bootstrapOsdSecret.Namespace = request.Namespace
-		err = r.client.Create(context.TODO(), bootstrapOsdSecret)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-	}
-
-	// Create MonCluster
-	monCluster := &cephv1alpha1.CephMonCluster{}
-
-	monCluster.Name = instance.GetName()
-	monCluster.Namespace = instance.GetNamespace()
-	monCluster.Spec.ClusterName = instance.GetName()
-
-	common.UpdateOwnerReferences(instance, monCluster)
-
-	err = r.createIfNotFound(monCluster)
+	err = r.createIfNotFound(svc)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	instance.Status.MonClusterName = instance.GetName()
-
-	// Launch MGR
-
-	// Launch MDS
-
-	// Launch RGW?
+	// Create Daemon Clusters
+	for _, o := range []DaemonClusterObject{
+		&cephv1alpha1.CephMonCluster{},
+		cephv1alpha1.NewCephDaemonCluster(cephv1alpha1.CephDaemonTypeMgr),
+		cephv1alpha1.NewCephDaemonCluster(cephv1alpha1.CephDaemonTypeMds),
+	} {
+		err = r.createDaemonCluster(o, instance)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+	}
 
 	return r.update(instance)
+}
 
+type DaemonClusterObject interface {
+	metav1.Object
+	runtime.Object
+	SetCephClusterName(string)
+	SetImage(cephv1alpha1.ImageSpec)
+	SetCephConfConfigMapName(string)
+	GetDaemonType() string
+}
+
+func (r *ReconcileCephCluster) createDaemonCluster(o DaemonClusterObject, cluster *cephv1alpha1.CephCluster) error {
+	o.SetName(cluster.GetName())
+	o.SetNamespace(cluster.GetNamespace())
+	o.SetCephClusterName(cluster.GetName())
+	o.SetCephConfConfigMapName(cluster.GetCephConfigMapName())
+	o.SetLabels(map[string]string{
+		cephv1alpha1.ClusterNameLabel: cluster.GetName(),
+		cephv1alpha1.DaemonTypeLabel:  o.GetDaemonType(),
+	})
+
+	switch v := o.(type) {
+	case *cephv1alpha1.CephMonCluster:
+		o.SetImage(cluster.Spec.MonImage)
+	case *cephv1alpha1.CephDaemonCluster:
+		switch v.Spec.DaemonType {
+		case cephv1alpha1.CephDaemonTypeMgr:
+			o.SetImage(cluster.Spec.MgrImage)
+		case cephv1alpha1.CephDaemonTypeMds:
+			o.SetImage(cluster.Spec.MdsImage)
+		default:
+			return fmt.Errorf("Could not determine image for type %s", v.Spec.DaemonType)
+		}
+
+	default:
+		return fmt.Errorf("Could not determine image for type %T", o)
+	}
+
+	if err := controllerutil.SetControllerReference(cluster, o, r.scheme); err != nil {
+		return err
+	}
+
+	return r.createIfNotFound(o)
 }
 
 func (r *ReconcileCephCluster) createIfNotFound(o runtime.Object) error {
@@ -267,4 +182,14 @@ func (r *ReconcileCephCluster) update(object runtime.Object) (reconcile.Result, 
 		return reconcile.Result{}, err
 	}
 	return reconcile.Result{}, nil
+}
+
+func (r *ReconcileCephCluster) updateCephConfConfigMap(instance *cephv1alpha1.CephCluster) error {
+	configMap, err := instance.GetCephConfigMap()
+	if err != nil {
+		return err
+	}
+	configMap.Namespace = instance.GetNamespace()
+
+	return r.createIfNotFound(configMap)
 }

@@ -1,0 +1,7 @@
+apiVersion: ceph.k8s.pgc.umn.edu/v1alpha1
+kind: CephDaemonCluster
+metadata:
+  name: example-cephdaemoncluster
+spec:
+  # Add fields here
+  size: 3
