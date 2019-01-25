@@ -41,7 +41,14 @@ type ReadOnlyClient interface {
 func NewCephDaemonStateMachine(daemon *cephv1alpha1.CephDaemon,
 	daemonCluster *cephv1alpha1.CephDaemonCluster, logger logr.Logger) CephDaemonStateMachine {
 
-	return &MgrStateMachine{BaseStateMachine: newBaseStateMachine(daemon, daemonCluster, logger)}
+	switch daemon.Spec.DaemonType {
+	case cephv1alpha1.CephDaemonTypeMgr:
+		return &MgrStateMachine{BaseStateMachine: newBaseStateMachine(daemon, daemonCluster, logger)}
+	case cephv1alpha1.CephDaemonTypeMds:
+		return &MdsStateMachine{BaseStateMachine: newBaseStateMachine(daemon, daemonCluster, logger)}
+	default:
+		return nil
+	}
 }
 
 func newBaseStateMachine(daemon *cephv1alpha1.CephDaemon,
@@ -94,6 +101,51 @@ func (s *BaseStateMachine) logError(client client.Client, scheme *runtime.Scheme
 	return nil
 }
 
+func (s *BaseStateMachine) launchPod(client client.Client, scheme *runtime.Scheme) error {
+	daemonType := s.daemon.Spec.DaemonType
+
+	pod := s.daemon.GetBasePod()
+
+	envs := []corev1.EnvVar{corev1.EnvVar{
+		Name:  "CMD",
+		Value: fmt.Sprintf("start_%s", daemonType),
+	},
+		corev1.EnvVar{
+			Name:  "DAEMON_ID",
+			Value: s.daemon.Spec.ID,
+		},
+	}
+
+	keyringName := fmt.Sprintf("ceph-%s-client.bootstrap-%s-keyring", s.daemon.Spec.ClusterName, daemonType)
+	volumeMounts := []corev1.VolumeMount{corev1.VolumeMount{
+		Name:      fmt.Sprintf("%s-bootstrap-keyring", daemonType),
+		MountPath: fmt.Sprintf("/keyrings/client.bootstrap-%s", daemonType),
+	}}
+
+	volumes := []corev1.Volume{corev1.Volume{
+		Name: fmt.Sprintf("%s-bootstrap-keyring", daemonType),
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: keyringName,
+			},
+		},
+	}}
+
+	pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, envs...)
+	pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, volumeMounts...)
+	pod.Spec.Volumes = append(pod.Spec.Volumes, volumes...)
+
+	if err := controllerutil.SetControllerReference(s.daemon, pod, scheme); err != nil {
+		return err
+	}
+
+	err := client.Create(context.TODO(), pod)
+	if !errors.IsAlreadyExists(err) {
+		return err
+	}
+	return nil
+}
+
 func (s *BaseStateMachine) GetTransition(client ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephDaemonState) {
 
 	switch s.State() {
@@ -101,6 +153,12 @@ func (s *BaseStateMachine) GetTransition(client ReadOnlyClient) (TransitionFunc,
 		if s.daemonEnabled() {
 			return nil, StateLaunching
 		}
+
+	case StateLaunching:
+		if s.daemonEnabled() {
+			return s.launchPod, StateWaitForRun
+		}
+
 	case StateWaitForRun:
 		running, err := s.checkPod(client, podRunning)
 		if err != nil {
@@ -109,6 +167,7 @@ func (s *BaseStateMachine) GetTransition(client ReadOnlyClient) (TransitionFunc,
 		if running {
 			return nil, StateWaitForReady
 		}
+
 	case StateWaitForReady:
 		ready, err := s.checkPod(client, podReady)
 		if err != nil {
@@ -146,61 +205,21 @@ type MgrStateMachine struct {
 func (s *MgrStateMachine) GetTransition(client ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephDaemonState) {
 
 	switch s.State() {
-	case StateLaunching:
-		if s.daemonEnabled() {
-			return s.launchPod, StateWaitForRun
-		}
-
 	default:
 		return s.BaseStateMachine.GetTransition(client)
 	}
-
-	return nil, s.State()
 }
 
-func (s *MgrStateMachine) launchPod(client client.Client, scheme *runtime.Scheme) error {
-	daemonType := s.daemon.Spec.DaemonType
+type MdsStateMachine struct {
+	*BaseStateMachine
+}
 
-	pod := s.daemon.GetBasePod()
+func (s *MdsStateMachine) GetTransition(client ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephDaemonState) {
 
-	envs := []corev1.EnvVar{corev1.EnvVar{
-		Name:  "CMD",
-		Value: fmt.Sprintf("start_%s", daemonType),
-	},
-		corev1.EnvVar{
-			Name:  "MGR_ID",
-			Value: s.daemon.Spec.ID,
-		},
+	switch s.State() {
+	default:
+		return s.BaseStateMachine.GetTransition(client)
 	}
-
-	keyringName := fmt.Sprintf("ceph-%s-client.bootstrap-%s-keyring", s.daemon.Spec.ClusterName, daemonType)
-	volumeMounts := []corev1.VolumeMount{corev1.VolumeMount{
-		Name:      "mgr-bootstrap-keyring",
-		MountPath: fmt.Sprintf("/keyrings/client.bootstrap-%s", daemonType),
-	}}
-
-	volumes := []corev1.Volume{corev1.Volume{
-		Name: "mgr-bootstrap-keyring",
-		VolumeSource: corev1.VolumeSource{
-			Secret: &corev1.SecretVolumeSource{
-				SecretName: keyringName,
-			},
-		},
-	}}
-
-	pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, envs...)
-	pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, volumeMounts...)
-	pod.Spec.Volumes = append(pod.Spec.Volumes, volumes...)
-
-	if err := controllerutil.SetControllerReference(s.daemon, pod, scheme); err != nil {
-		return err
-	}
-
-	err := client.Create(context.TODO(), pod)
-	if !errors.IsAlreadyExists(err) {
-		return err
-	}
-	return nil
 }
 
 func podRunning(pod *corev1.Pod) bool {

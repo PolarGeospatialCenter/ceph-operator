@@ -7,17 +7,7 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-type CephDaemonType string
-
-const (
-	CephDaemonTypeMgr CephDaemonType = "mgr"
-	CephDaemonTypeMds CephDaemonType = "mds"
-	CephDaemonTypeRgw CephDaemonType = "rgw"
-)
-
-func (c CephDaemonType) String() string {
-	return string(c)
-}
+type CephDaemonClusterState string
 
 // CephDaemonClusterSpec defines the desired state of CephDaemonCluster
 type CephDaemonClusterSpec struct {

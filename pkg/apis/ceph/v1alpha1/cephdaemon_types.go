@@ -11,6 +11,18 @@ import (
 
 type CephDaemonState string
 
+type CephDaemonType string
+
+func (c CephDaemonType) String() string {
+	return string(c)
+}
+
+const (
+	CephDaemonTypeMgr CephDaemonType = "mgr"
+	CephDaemonTypeMds CephDaemonType = "mds"
+	CephDaemonTypeRgw CephDaemonType = "rgw"
+)
+
 // CephDaemonSpec defines the desired state of CephDaemon
 type CephDaemonSpec struct {
 	ClusterName           string         `json:"clusterName"`
@@ -54,7 +66,9 @@ func init() {
 func NewCephDaemon(t CephDaemonType, clusterName string) *CephDaemon {
 	d := &CephDaemon{}
 	d.Spec.DaemonType = t
-	d.Spec.ID = rand.String(6)
+	// Always have non-numeric start char
+	c := 'a' + rand.Intn(26)
+	d.Spec.ID = string(c) + rand.String(5)
 	d.Spec.ClusterName = clusterName
 	d.Name = fmt.Sprintf("ceph-%s-%s.%s", clusterName, string(t), d.Spec.ID)
 
