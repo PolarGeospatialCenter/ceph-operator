@@ -4,6 +4,7 @@ import (
 	"context"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
+	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -60,6 +61,14 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	err = c.Watch(&source.Kind{Type: &cephv1alpha1.CephCluster{}}, &handler.EnqueueRequestsFromMapFunc{
+		ToRequests: &common.CephClusterEventMapper{Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+			ApiVersion: cephv1alpha1.SchemeGroupVersion.String(), Kind: "CephOsd"},
+	})
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -94,8 +103,21 @@ func (r *ReconcileCephOsd) Reconcile(request reconcile.Request) (reconcile.Resul
 		return reconcile.Result{}, err
 	}
 
+	// Label ourselves with our TYPE and ClusterName
+	labelsUpdated := updateLabels(instance)
+	if labelsUpdated {
+		return reconcile.Result{}, r.updateObject(instance)
+	}
+
+	cluster, err := r.getCephCluster(instance)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	osdDisabled := !cluster.GetDaemonEnabled(cephv1alpha1.CephDaemonTypeOsd) || instance.GetDisabled()
+
 	// Return if disabled
-	if instance.GetDisabled() {
+	if osdDisabled {
 
 		pod := &corev1.Pod{}
 		pod.Name = instance.GetPodName()
@@ -106,17 +128,6 @@ func (r *ReconcileCephOsd) Reconcile(request reconcile.Request) (reconcile.Resul
 			return reconcile.Result{}, err
 		}
 		return reconcile.Result{}, nil
-	}
-
-	// Lookup cluster
-	cluster := &cephv1alpha1.CephCluster{}
-	clusterNamespacedName := &types.NamespacedName{
-		Namespace: request.Namespace,
-		Name:      instance.Spec.ClusterName,
-	}
-	err = r.client.Get(context.TODO(), *clusterNamespacedName, cluster)
-	if err != nil {
-		return reconcile.Result{}, err
 	}
 
 	// Create PVC
@@ -153,4 +164,38 @@ func (r *ReconcileCephOsd) Reconcile(request reconcile.Request) (reconcile.Resul
 
 	return reconcile.Result{}, nil
 
+}
+
+func (r *ReconcileCephOsd) getCephCluster(d *cephv1alpha1.CephOsd) (*cephv1alpha1.CephCluster, error) {
+	cephCluster := &cephv1alpha1.CephCluster{}
+	cephClusterNamespacedName := types.NamespacedName{
+		Name:      d.Spec.ClusterName,
+		Namespace: d.GetNamespace(),
+	}
+
+	return cephCluster, r.client.Get(context.TODO(), cephClusterNamespacedName, cephCluster)
+}
+
+func (r *ReconcileCephOsd) updateObject(object runtime.Object) error {
+	return r.client.Update(context.TODO(), object)
+}
+
+func updateLabels(d *cephv1alpha1.CephOsd) bool {
+	var updated bool
+	labels := d.GetLabels()
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+	if val, ok := labels[cephv1alpha1.ClusterNameLabel]; !ok || val != d.Spec.ClusterName {
+		labels[cephv1alpha1.ClusterNameLabel] = d.Spec.ClusterName
+		d.SetLabels(labels)
+		updated = true
+	}
+	if val, ok := labels[cephv1alpha1.DaemonTypeLabel]; !ok || val != cephv1alpha1.CephDaemonTypeOsd.String() {
+		labels[cephv1alpha1.DaemonTypeLabel] = cephv1alpha1.CephDaemonTypeOsd.String()
+		d.SetLabels(labels)
+		updated = true
+	}
+
+	return updated
 }

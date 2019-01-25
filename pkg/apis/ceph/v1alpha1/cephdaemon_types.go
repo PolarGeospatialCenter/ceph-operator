@@ -11,6 +11,16 @@ import (
 
 type CephDaemonState string
 
+const (
+	CephDaemonStateIdle         CephDaemonState = "Idle"
+	CephDaemonStateLaunching                    = "Launching"
+	CephDaemonStateWaitForRun                   = "Wait for Run"
+	CephDaemonStateWaitForReady                 = "Wait for Ready"
+	CephDaemonStateReady                        = "Ready"
+	CephDaemonStateError                        = "Error"
+	CephDaemonStateCleanup                      = "Cleanup"
+)
+
 type CephDaemonType string
 
 func (c CephDaemonType) String() string {
@@ -21,6 +31,8 @@ const (
 	CephDaemonTypeMgr CephDaemonType = "mgr"
 	CephDaemonTypeMds CephDaemonType = "mds"
 	CephDaemonTypeRgw CephDaemonType = "rgw"
+	CephDaemonTypeOsd CephDaemonType = "osd"
+	CephDaemonTypeMon CephDaemonType = "mon"
 )
 
 // CephDaemonSpec defines the desired state of CephDaemon

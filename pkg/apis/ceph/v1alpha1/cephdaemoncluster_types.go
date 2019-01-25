@@ -9,19 +9,26 @@ import (
 
 type CephDaemonClusterState string
 
+const (
+	CephDaemonClusterStateIdle    CephDaemonClusterState = "Idle"
+	CephDaemonClusterStateRunning                        = "Running"
+	CephDaemonClusterStateScaling                        = "Scaling"
+	CephDaemonClusterStateError                          = "Error"
+)
+
 // CephDaemonClusterSpec defines the desired state of CephDaemonCluster
 type CephDaemonClusterSpec struct {
 	ClusterName           string         `json:"clusterName"`
 	Image                 ImageSpec      `json:"image"`
 	CephConfConfigMapName string         `json:"cephConfConfigMapName"`
 	DaemonType            CephDaemonType `json:"daemonType"`
+	Disabled              bool           `json:"disabled"`
 	Replicas              int            `json:"replicas"`
 }
 
 // CephDaemonClusterStatus defines the observed state of CephDaemonCluster
 type CephDaemonClusterStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
+	State CephDaemonClusterState `json:"state"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -53,6 +60,14 @@ func NewCephDaemonCluster(t CephDaemonType) *CephDaemonCluster {
 	return &CephDaemonCluster{Spec: CephDaemonClusterSpec{
 		DaemonType: t,
 	}}
+}
+
+func (d *CephDaemonCluster) GetState() CephDaemonClusterState {
+	return d.Status.State
+}
+
+func (d *CephDaemonCluster) SetState(s CephDaemonClusterState) {
+	d.Status.State = s
 }
 
 func (c *CephDaemonCluster) GetDaemonType() CephDaemonType {

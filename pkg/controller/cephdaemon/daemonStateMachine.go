@@ -15,16 +15,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-const (
-	StateIdle         cephv1alpha1.CephDaemonState = "Idle"
-	StateLaunching                                 = "Launching"
-	StateWaitForRun                                = "Wait for Run"
-	StateWaitForReady                              = "Wait for Ready"
-	StateReady                                     = "Ready"
-	StateError                                     = "Error"
-	StateCleanup                                   = "Cleanup"
-)
-
 type TransitionFunc func(client.Client, *runtime.Scheme) error
 type podCheckFunc func(*corev1.Pod) bool
 
@@ -63,7 +53,7 @@ type BaseStateMachine struct {
 }
 
 func (s *BaseStateMachine) daemonEnabled() bool {
-	return !s.daemon.Spec.Disabled
+	return !s.daemon.Spec.Disabled && s.daemonCluster.GetState() != cephv1alpha1.CephDaemonClusterStateIdle
 }
 
 func (s *BaseStateMachine) State() cephv1alpha1.CephDaemonState {
@@ -148,51 +138,50 @@ func (s *BaseStateMachine) launchPod(client client.Client, scheme *runtime.Schem
 
 func (s *BaseStateMachine) GetTransition(client ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephDaemonState) {
 
+	if !s.daemonEnabled() && s.State() != cephv1alpha1.CephDaemonStateCleanup && s.State() != cephv1alpha1.CephDaemonStateIdle {
+		return nil, cephv1alpha1.CephDaemonStateCleanup
+	}
+
 	switch s.State() {
-	case StateIdle:
+	case cephv1alpha1.CephDaemonStateIdle:
 		if s.daemonEnabled() {
-			return nil, StateLaunching
+			return nil, cephv1alpha1.CephDaemonStateLaunching
 		}
 
-	case StateLaunching:
-		if s.daemonEnabled() {
-			return s.launchPod, StateWaitForRun
-		}
+	case cephv1alpha1.CephDaemonStateLaunching:
+		return s.launchPod, cephv1alpha1.CephDaemonStateWaitForRun
 
-	case StateWaitForRun:
+	case cephv1alpha1.CephDaemonStateWaitForRun:
 		running, err := s.checkPod(client, podRunning)
 		if err != nil {
-			return nil, StateError
+			return nil, cephv1alpha1.CephDaemonStateError
 		}
 		if running {
-			return nil, StateWaitForReady
+			return nil, cephv1alpha1.CephDaemonStateWaitForReady
 		}
 
-	case StateWaitForReady:
+	case cephv1alpha1.CephDaemonStateWaitForReady:
 		ready, err := s.checkPod(client, podReady)
 		if err != nil {
-			return nil, StateError
+			return nil, cephv1alpha1.CephDaemonStateError
 		}
 		if ready {
-			return nil, StateReady
+			return nil, cephv1alpha1.CephDaemonStateReady
 		}
 
-	case StateReady:
-		if !s.daemonEnabled() {
-			return nil, StateCleanup
-		}
+	case cephv1alpha1.CephDaemonStateReady:
 		if _, err := s.checkPod(client, func(*corev1.Pod) bool { return true }); err != nil {
-			return nil, StateError
+			return nil, cephv1alpha1.CephDaemonStateError
 		}
 
-	case StateError:
-		return s.logError, StateCleanup
+	case cephv1alpha1.CephDaemonStateError:
+		return s.logError, cephv1alpha1.CephDaemonStateCleanup
 
-	case StateCleanup:
-		return s.deletePod, StateIdle
+	case cephv1alpha1.CephDaemonStateCleanup:
+		return s.deletePod, cephv1alpha1.CephDaemonStateIdle
 
 	default:
-		return nil, StateCleanup
+		return nil, cephv1alpha1.CephDaemonStateCleanup
 	}
 
 	return nil, s.State()

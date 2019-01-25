@@ -20,14 +20,36 @@ const (
 type CephClusterState string
 
 const (
-	CephClusterDisabled        CephClusterState = "Disabled"
-	CephClusterIdle            CephClusterState = "Idle"
-	CephClusterLaunchMon       CephClusterState = "Launch Mon"
-	CephClusterLaunchCluster   CephClusterState = "Launch Cluster"
-	CephClusterRunning         CephClusterState = "Running"
-	CephClusterShutdownCluster CephClusterState = "Shutdown Cluster"
-	CephClusterShutdownMon     CephClusterState = "Shutdown Mon"
+	CephClusterIdle         CephClusterState = "Idle"
+	CephClusterStartMons    CephClusterState = "Start Mons"
+	CephClusterStartDaemons CephClusterState = "Start Daemons"
+	CephClusterStartOsds    CephClusterState = "Start Osds"
+	CephClusterRunning      CephClusterState = "Running"
+	CephClusterShutdown     CephClusterState = "Starting Shutdown"
+	CephClusterStopDaemons  CephClusterState = "Stop Daemons"
+	CephClusterStopOsds     CephClusterState = "Stop Osds"
+	CephClusterStopMons     CephClusterState = "Stop Mons"
 )
+
+type DaemonEnabledStateMap map[CephDaemonType][]CephClusterState
+
+var DaemonEnabledStates DaemonEnabledStateMap = DaemonEnabledStateMap{
+	CephDaemonTypeMgr: []CephClusterState{
+		CephClusterRunning, CephClusterStartDaemons, CephClusterStartOsds, CephClusterShutdown,
+	},
+	CephDaemonTypeMds: []CephClusterState{
+		CephClusterRunning, CephClusterStartDaemons, CephClusterStartOsds, CephClusterShutdown,
+	},
+	CephDaemonTypeRgw: []CephClusterState{
+		CephClusterRunning, CephClusterStartDaemons, CephClusterStartOsds, CephClusterShutdown,
+	},
+	CephDaemonTypeOsd: []CephClusterState{
+		CephClusterRunning, CephClusterStartOsds, CephClusterStopDaemons, CephClusterShutdown,
+	},
+	CephDaemonTypeMon: []CephClusterState{
+		CephClusterRunning, CephClusterStartMons, CephClusterStartDaemons, CephClusterStartOsds, CephClusterStopDaemons, CephClusterStopOsds, CephClusterShutdown,
+	},
+}
 
 // CephClusterSpec defines the desired state of CephCluster
 type CephClusterSpec struct {
@@ -125,6 +147,30 @@ func (c *CephCluster) GetCephConfigMap() (*corev1.ConfigMap, error) {
 	cm.Data = map[string]string{fmt.Sprintf("%s.conf", c.GetName()): cephConf.String()}
 
 	return cm, nil
+}
+
+func (c *CephCluster) GetDaemonEnabled(d CephDaemonType) bool {
+
+	enabledStates, ok := DaemonEnabledStates[d]
+	if !ok {
+		return false
+	}
+
+	for _, state := range enabledStates {
+		if c.Status.State == state {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (d *CephCluster) GetState() CephClusterState {
+	return d.Status.State
+}
+
+func (d *CephCluster) SetState(s CephClusterState) {
+	d.Status.State = s
 }
 
 func (c *CephCluster) GetCephConfigMapName() string {

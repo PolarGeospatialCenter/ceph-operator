@@ -50,6 +50,13 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	err = c.Watch(&source.Kind{Type: &cephv1alpha1.CephDaemonCluster{}}, &handler.EnqueueRequestsFromMapFunc{
+		ToRequests: &DaemonClusterEventMapper{client: mgr.GetClient(), scheme: mgr.GetScheme()},
+	})
+	if err != nil {
+		return err
+	}
+
 	// TODO(user): Modify this to be the types you create that are owned by the primary resource
 	// Watch for changes to secondary resource Pods and requeue the owner CephDaemon
 	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{

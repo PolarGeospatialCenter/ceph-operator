@@ -4,6 +4,7 @@ import (
 	"context"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
+	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -54,6 +55,14 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	err = c.Watch(&source.Kind{Type: &cephv1alpha1.CephCluster{}}, &handler.EnqueueRequestsFromMapFunc{
+		ToRequests: &common.CephClusterEventMapper{Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+			ApiVersion: cephv1alpha1.SchemeGroupVersion.String(), Kind: "CephMonCluster"},
+	})
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -88,6 +97,24 @@ func (r *ReconcileCephMonCluster) Reconcile(request reconcile.Request) (reconcil
 		}
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
+	}
+
+	cephCluster, err := r.getCephCluster(instance)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	if !cephCluster.GetDaemonEnabled(cephv1alpha1.CephDaemonTypeMon) &&
+		!instance.CheckMonClusterState(cephv1alpha1.MonClusterIdle, cephv1alpha1.MonClusterLostQuorum) {
+
+		instance.SetMonClusterState(cephv1alpha1.MonClusterLostQuorum)
+		return r.updateAndRequeue(instance)
+	}
+
+	if !cephCluster.GetDaemonEnabled(cephv1alpha1.CephDaemonTypeMon) &&
+		instance.CheckMonClusterState(cephv1alpha1.MonClusterIdle) {
+
+		return reconcile.Result{}, nil
 	}
 
 	fullMonMap, err := r.getMonMap(instance)
@@ -269,4 +296,14 @@ func (r *ReconcileCephMonCluster) generateKeyringSecret(keyring Keyring, namespa
 	}
 
 	return nil
+}
+
+func (r *ReconcileCephMonCluster) getCephCluster(d *cephv1alpha1.CephMonCluster) (*cephv1alpha1.CephCluster, error) {
+	cephCluster := &cephv1alpha1.CephCluster{}
+	cephClusterNamespacedName := types.NamespacedName{
+		Name:      d.GetCephClusterName(),
+		Namespace: d.GetNamespace(),
+	}
+
+	return cephCluster, r.client.Get(context.TODO(), cephClusterNamespacedName, cephCluster)
 }
