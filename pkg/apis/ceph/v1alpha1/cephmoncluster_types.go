@@ -231,6 +231,6 @@ func (c *CephMonCluster) GetCephConfConfigMapName() string {
 	return c.Spec.CephConfConfigMapName
 }
 
-func (c *CephMonCluster) GetDaemonType() string {
-	return "mon"
+func (c *CephMonCluster) GetDaemonType() CephDaemonType {
+	return CephDaemonType("mon")
 }

@@ -30,7 +30,7 @@ func TestGetCephConfigMap(t *testing.T) {
 					Name: "ceph-test-conf",
 				},
 				Data: map[string]string{
-					"ceph.conf": "[global]\n" +
+					"test.conf": "[global]\n" +
 						"fsid     = FCA3CCCA-8258-4A72-8C10-39CF2B0585EE\n" +
 						"mon_host = monitor\n\n"}},
 		},
@@ -59,7 +59,7 @@ func TestGetCephConfigMap(t *testing.T) {
 					Name: "ceph-test-conf",
 				},
 				Data: map[string]string{
-					"ceph.conf": "[global]\n" +
+					"test.conf": "[global]\n" +
 						"fsid     = FCA3CCCA-8258-4A72-8C10-39CF2B0585EE\n" +
 						"mon_host = fooservice\n" +
 						"keyring  = /keyrings/client.admin/keyring\n" +

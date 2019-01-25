@@ -122,7 +122,7 @@ func (c *CephCluster) GetCephConfigMap() (*corev1.ConfigMap, error) {
 
 	cm := &corev1.ConfigMap{}
 	cm.Name = c.GetCephConfigMapName()
-	cm.Data = map[string]string{"ceph.conf": cephConf.String()}
+	cm.Data = map[string]string{fmt.Sprintf("%s.conf", c.GetName()): cephConf.String()}
 
 	return cm, nil
 }

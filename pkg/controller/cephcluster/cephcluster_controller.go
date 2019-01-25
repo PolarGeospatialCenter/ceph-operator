@@ -131,7 +131,7 @@ type DaemonClusterObject interface {
 	SetCephClusterName(string)
 	SetImage(cephv1alpha1.ImageSpec)
 	SetCephConfConfigMapName(string)
-	GetDaemonType() string
+	GetDaemonType() cephv1alpha1.CephDaemonType
 }
 
 func (r *ReconcileCephCluster) createDaemonCluster(o DaemonClusterObject, cluster *cephv1alpha1.CephCluster) error {
@@ -141,13 +141,15 @@ func (r *ReconcileCephCluster) createDaemonCluster(o DaemonClusterObject, cluste
 	o.SetCephConfConfigMapName(cluster.GetCephConfigMapName())
 	o.SetLabels(map[string]string{
 		cephv1alpha1.ClusterNameLabel: cluster.GetName(),
-		cephv1alpha1.DaemonTypeLabel:  o.GetDaemonType(),
+		cephv1alpha1.DaemonTypeLabel:  o.GetDaemonType().String(),
 	})
 
 	switch v := o.(type) {
 	case *cephv1alpha1.CephMonCluster:
 		o.SetImage(cluster.Spec.MonImage)
 	case *cephv1alpha1.CephDaemonCluster:
+		o.SetName(fmt.Sprintf("%s-%s", cluster.GetName(), v.Spec.DaemonType))
+		v.Spec.Replicas = 3
 		switch v.Spec.DaemonType {
 		case cephv1alpha1.CephDaemonTypeMgr:
 			o.SetImage(cluster.Spec.MgrImage)

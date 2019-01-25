@@ -2,6 +2,9 @@ package cephdaemoncluster
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
+	"time"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -94,14 +97,7 @@ func (r *ReconcileCephDaemonCluster) Reconcile(request reconcile.Request) (recon
 		return reconcile.Result{}, err
 	}
 
-	daemonList := &cephv1alpha1.CephDaemonList{}
-	daemonListOptions := &client.ListOptions{}
-	daemonListOptions.MatchingLabels(map[string]string{
-		cephv1alpha1.ClusterNameLabel: instance.Spec.ClusterName,
-		cephv1alpha1.DaemonTypeLabel:  string(instance.GetDaemonType()),
-	})
-
-	err = r.client.List(context.TODO(), daemonListOptions, daemonList)
+	daemonList, err := r.listDaemons(instance.GetDaemonType(), instance.Spec.ClusterName)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -109,17 +105,12 @@ func (r *ReconcileCephDaemonCluster) Reconcile(request reconcile.Request) (recon
 	daemonCount := len(daemonList.Items)
 
 	if daemonCount > instance.Spec.Replicas {
-		//delete
+		return reconcile.Result{}, r.deleteDaemon(instance)
 	}
 
 	if daemonCount < instance.Spec.Replicas {
 		return reconcile.Result{}, r.createDaemon(instance)
 	}
-
-	// Set CephDaemonCluster instance as the owner and controller
-	// if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
-	// 	return reconcile.Result{}, err
-	// }
 
 	return reconcile.Result{}, nil
 }
@@ -141,4 +132,33 @@ func (r *ReconcileCephDaemonCluster) createDaemon(c *cephv1alpha1.CephDaemonClus
 	}
 
 	return nil
+}
+
+func (r *ReconcileCephDaemonCluster) deleteDaemon(c *cephv1alpha1.CephDaemonCluster) error {
+	daemons, err := r.listDaemons(c.GetDaemonType(), c.Spec.ClusterName)
+	if err != nil {
+		return err
+	}
+
+	if len(daemons.Items) < 1 {
+		return fmt.Errorf("unabled to delete daemon, no daemons found")
+	}
+
+	var toDelete cephv1alpha1.CephDaemon
+
+	rand.Seed(time.Now().UnixNano())
+	toDelete = daemons.Items[rand.Int()%len(daemons.Items)]
+
+	return r.client.Delete(context.TODO(), &toDelete)
+}
+
+func (r *ReconcileCephDaemonCluster) listDaemons(daemonType cephv1alpha1.CephDaemonType, clusterName string) (*cephv1alpha1.CephDaemonList, error) {
+	daemonList := &cephv1alpha1.CephDaemonList{}
+	daemonListOptions := &client.ListOptions{}
+	daemonListOptions.MatchingLabels(map[string]string{
+		cephv1alpha1.ClusterNameLabel: clusterName,
+		cephv1alpha1.DaemonTypeLabel:  string(daemonType),
+	})
+
+	return daemonList, r.client.List(context.TODO(), daemonListOptions, daemonList)
 }

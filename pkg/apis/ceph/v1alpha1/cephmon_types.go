@@ -137,6 +137,10 @@ func (m *CephMon) GetPod(monCluster *CephMonCluster, clientAdminKeyringName stri
 			Value: m.Spec.ID,
 		},
 		corev1.EnvVar{
+			Name:  "CLUSTER",
+			Value: m.Spec.ClusterName,
+		},
+		corev1.EnvVar{
 			Name:  "MON_CLUSTER_START_EPOCH",
 			Value: strconv.Itoa(monCluster.Status.StartEpoch),
 		},

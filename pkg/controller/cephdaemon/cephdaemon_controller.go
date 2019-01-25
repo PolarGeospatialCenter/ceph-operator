@@ -2,16 +2,15 @@ package cephdaemon
 
 import (
 	"context"
+	"fmt"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -99,54 +98,94 @@ func (r *ReconcileCephDaemon) Reconcile(request reconcile.Request) (reconcile.Re
 		return reconcile.Result{}, err
 	}
 
-	// Define a new Pod object
-	pod := newPodForCR(instance)
-
 	// Set CephDaemon instance as the owner and controller
-	if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
+	// if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
+	// 	return reconcile.Result{}, err
+	// }
+
+	// Label ourselves with our TYPE and ClusterName
+	labelsUpdated := updateLabels(instance)
+	if labelsUpdated {
+		return reconcile.Result{}, r.updateObject(instance)
+	}
+
+	// Lookup Daemon Cluster - // Only Return One
+	daemonCluster, err := r.getDaemonCluster(instance)
+	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	// Check if this Pod already exists
-	found := &corev1.Pod{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-		err = r.client.Create(context.TODO(), pod)
+	dsm := NewCephDaemonStateMachine(instance, daemonCluster, reqLogger)
+
+	currentState := dsm.State()
+	transtionFunc, nextState := dsm.GetTransition(r.client)
+
+	if nextState == currentState {
+		return reconcile.Result{}, nil
+	}
+
+	if transtionFunc != nil {
+		err = transtionFunc(r.client, r.scheme)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
-
-		// Pod created successfully - don't requeue
-		return reconcile.Result{}, nil
-	} else if err != nil {
-		return reconcile.Result{}, err
 	}
 
-	// Pod already exists - don't requeue
-	reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
-	return reconcile.Result{}, nil
+	reqLogger.Info(fmt.Sprintf("transitioning from %s to %s", currentState, nextState))
+	instance.SetState(nextState)
+	return reconcile.Result{}, r.updateObject(instance)
+
+	// Get Current State
+	// Get Next state, and call function for transtion
+	// If success, update current state
+
 }
 
-// newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *cephv1alpha1.CephDaemon) *corev1.Pod {
-	labels := map[string]string{
-		"app": cr.Name,
+func updateLabels(d *cephv1alpha1.CephDaemon) bool {
+	var updated bool
+	labels := d.GetLabels()
+	if labels == nil {
+		labels = make(map[string]string)
 	}
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-pod",
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    "busybox",
-					Image:   "busybox",
-					Command: []string{"sleep", "3600"},
-				},
-			},
-		},
+	if val, ok := labels[cephv1alpha1.ClusterNameLabel]; !ok || val != d.Spec.ClusterName {
+		labels[cephv1alpha1.ClusterNameLabel] = d.Spec.ClusterName
+		d.SetLabels(labels)
+		updated = true
 	}
+	if val, ok := labels[cephv1alpha1.DaemonTypeLabel]; !ok || val != d.Spec.DaemonType.String() {
+		labels[cephv1alpha1.DaemonTypeLabel] = d.Spec.DaemonType.String()
+		d.SetLabels(labels)
+		updated = true
+	}
+
+	return updated
+}
+
+func (r *ReconcileCephDaemon) updateObject(object runtime.Object) error {
+	return r.client.Update(context.TODO(), object)
+}
+
+func (r *ReconcileCephDaemon) getDaemonCluster(d *cephv1alpha1.CephDaemon) (*cephv1alpha1.CephDaemonCluster, error) {
+	daemonClusterList := &cephv1alpha1.CephDaemonClusterList{}
+	daemonClusterListOptions := &client.ListOptions{}
+	daemonClusterListOptions.MatchingLabels(map[string]string{
+		cephv1alpha1.ClusterNameLabel: d.Spec.ClusterName,
+		cephv1alpha1.DaemonTypeLabel:  d.Spec.DaemonType.String(),
+	})
+	err := r.client.List(context.TODO(), daemonClusterListOptions, daemonClusterList)
+	if err != nil {
+		return nil, err
+	}
+
+	daemonClusterCount := len(daemonClusterList.Items)
+	if daemonClusterCount > 1 {
+		return nil, fmt.Errorf("found %d %s daemon clusters, should only have 1", daemonClusterCount, d.Spec.DaemonType)
+	}
+
+	if daemonClusterCount == 0 {
+		log.Info("No %s daemon cluster found. Ignoring until one exists...", d.Spec.DaemonType)
+		return nil, nil
+	}
+
+	return &daemonClusterList.Items[0], nil
 }
