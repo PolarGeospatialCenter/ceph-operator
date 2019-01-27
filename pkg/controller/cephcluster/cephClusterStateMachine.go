@@ -57,22 +57,43 @@ func (s *BaseStateMachine) emitError(err error) TransitionFunc {
 	})
 }
 
-func (s *BaseStateMachine) listDaemonClusters(readClient ReadOnlyClient) (*cephv1alpha1.CephDaemonClusterList, error) {
-	daemonList := &cephv1alpha1.CephDaemonClusterList{}
-	daemonListOptions := &client.ListOptions{}
-	daemonListOptions.MatchingLabels(map[string]string{
+func (s *BaseStateMachine) listMonCluster(readClient ReadOnlyClient) (*cephv1alpha1.CephMonClusterList, error) {
+	monClusterList := &cephv1alpha1.CephMonClusterList{}
+	monClusterListOptions := &client.ListOptions{}
+	monClusterListOptions.MatchingLabels(map[string]string{
 		cephv1alpha1.ClusterNameLabel: s.cluster.GetName(),
 	})
 
-	return daemonList, readClient.List(context.TODO(), daemonListOptions, daemonList)
+	return monClusterList, readClient.List(context.TODO(), monClusterListOptions, monClusterList)
+}
+
+func (s *BaseStateMachine) listDaemonCluster(readClient ReadOnlyClient) (*cephv1alpha1.CephDaemonClusterList, error) {
+	daemonClusterList := &cephv1alpha1.CephDaemonClusterList{}
+	daemonClusterListOptions := &client.ListOptions{}
+	daemonClusterListOptions.MatchingLabels(map[string]string{
+		cephv1alpha1.ClusterNameLabel: s.cluster.GetName(),
+	})
+
+	return daemonClusterList, readClient.List(context.TODO(), daemonClusterListOptions, daemonClusterList)
 }
 
 func (s *BaseStateMachine) monClusterInQuorum(readClient ReadOnlyClient) (bool, error) {
-	return false, nil
+
+	monList, err := s.listMonCluster(readClient)
+	if err != nil {
+		return false, err
+	}
+
+	return monList.AllInState(cephv1alpha1.MonClusterInQuorum), nil
 }
 
 func (s *BaseStateMachine) daemonClustersRunning(readClient ReadOnlyClient) (bool, error) {
-	return false, nil
+	daemonList, err := s.listDaemonCluster(readClient)
+	if err != nil {
+		return false, err
+	}
+
+	return daemonList.AllInState(cephv1alpha1.CephDaemonClusterStateRunning), nil
 }
 
 func (s *BaseStateMachine) osdsRunning(readClient ReadOnlyClient) (bool, error) {
@@ -81,7 +102,12 @@ func (s *BaseStateMachine) osdsRunning(readClient ReadOnlyClient) (bool, error) 
 
 func (s *BaseStateMachine) daemonClustersIdle(readClient ReadOnlyClient) (bool, error) {
 
-	return true, nil
+	daemonList, err := s.listDaemonCluster(readClient)
+	if err != nil {
+		return false, err
+	}
+
+	return daemonList.AllInState(cephv1alpha1.CephDaemonClusterStateIdle), nil
 }
 
 func (s *BaseStateMachine) osdsIdle(readClient ReadOnlyClient) (bool, error) {
@@ -90,8 +116,12 @@ func (s *BaseStateMachine) osdsIdle(readClient ReadOnlyClient) (bool, error) {
 }
 
 func (s *BaseStateMachine) monClusterIdle(readClient ReadOnlyClient) (bool, error) {
+	monList, err := s.listMonCluster(readClient)
+	if err != nil {
+		return false, err
+	}
 
-	return true, nil
+	return monList.AllInState(cephv1alpha1.MonClusterIdle), nil
 }
 
 func (s *BaseStateMachine) GetTransition(readClient ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephClusterState) {

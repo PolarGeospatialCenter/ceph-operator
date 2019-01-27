@@ -97,3 +97,12 @@ func (c *CephDaemonCluster) SetCephConfConfigMapName(name string) {
 func (c *CephDaemonCluster) GetCephConfConfigMapName() string {
 	return c.Spec.CephConfConfigMapName
 }
+
+func (c *CephDaemonClusterList) AllInState(state CephDaemonClusterState) bool {
+	for _, e := range c.Items {
+		if e.GetState() != state {
+			return false
+		}
+	}
+	return true
+}

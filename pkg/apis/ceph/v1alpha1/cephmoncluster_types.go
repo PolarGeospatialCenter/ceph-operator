@@ -234,3 +234,12 @@ func (c *CephMonCluster) GetCephConfConfigMapName() string {
 func (c *CephMonCluster) GetDaemonType() CephDaemonType {
 	return CephDaemonType("mon")
 }
+
+func (c *CephMonClusterList) AllInState(state MonClusterState) bool {
+	for _, e := range c.Items {
+		if e.GetMonClusterState() != state {
+			return false
+		}
+	}
+	return true
+}

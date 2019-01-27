@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -52,9 +51,15 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// TODO(user): Modify this to be the types you create that are owned by the primary resource
-	// Watch for changes to secondary resource Pods and requeue the owner CephCluster
-	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
+	err = c.Watch(&source.Kind{Type: &cephv1alpha1.CephMonCluster{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &cephv1alpha1.CephCluster{},
+	})
+	if err != nil {
+		return err
+	}
+
+	err = c.Watch(&source.Kind{Type: &cephv1alpha1.CephDaemonCluster{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
 		OwnerType:    &cephv1alpha1.CephCluster{},
 	})
@@ -122,7 +127,26 @@ func (r *ReconcileCephCluster) Reconcile(request reconcile.Request) (reconcile.R
 		}
 	}
 
-	return r.update(instance)
+	sm := NewCephClusterStateMachine(instance, reqLogger)
+
+	currentState := sm.State()
+	transtionFunc, nextState := sm.GetTransition(r.client)
+
+	if transtionFunc != nil {
+		err = transtionFunc(r.client, r.scheme)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+	}
+
+	if nextState == currentState {
+		return reconcile.Result{}, nil
+	}
+
+	reqLogger.Info(fmt.Sprintf("transitioning from %s to %s", currentState, nextState))
+	instance.SetState(nextState)
+	return reconcile.Result{}, r.updateObject(instance)
+
 }
 
 type DaemonClusterObject interface {
@@ -178,12 +202,12 @@ func (r *ReconcileCephCluster) createIfNotFound(o runtime.Object) error {
 	return nil
 }
 
-func (r *ReconcileCephCluster) update(object runtime.Object) (reconcile.Result, error) {
+func (r *ReconcileCephCluster) updateObject(object runtime.Object) error {
 	err := r.client.Update(context.TODO(), object)
 	if err != nil {
-		return reconcile.Result{}, err
+		return err
 	}
-	return reconcile.Result{}, nil
+	return nil
 }
 
 func (r *ReconcileCephCluster) updateCephConfConfigMap(instance *cephv1alpha1.CephCluster) error {
