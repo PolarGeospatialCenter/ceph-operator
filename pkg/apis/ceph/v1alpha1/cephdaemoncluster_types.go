@@ -90,6 +90,14 @@ func (c *CephDaemonCluster) GetImage() ImageSpec {
 	return c.Spec.Image
 }
 
+func (c *CephDaemonCluster) DesiredReplicas() int {
+	return c.Spec.Replicas
+}
+
+func (c *CephDaemonCluster) Disabled() bool {
+	return c.Spec.Disabled
+}
+
 func (c *CephDaemonCluster) SetCephConfConfigMapName(name string) {
 	c.Spec.CephConfConfigMapName = name
 }

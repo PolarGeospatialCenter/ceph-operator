@@ -17,6 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common/statemachine/daemoncluster"
 )
 
 var log = logf.Log.WithName("controller_cephdaemoncluster")
@@ -117,7 +119,7 @@ func (r *ReconcileCephDaemonCluster) Reconcile(request reconcile.Request) (recon
 		return reconcile.Result{}, err
 	}
 
-	dsm := NewCephDaemonClusterStateMachine(instance, cephCluster, reqLogger)
+	dsm := daemoncluster.NewStateMachine(instance, cephCluster, reqLogger)
 
 	currentState := dsm.State()
 	transtionFunc, nextState := dsm.GetTransition(r.client)

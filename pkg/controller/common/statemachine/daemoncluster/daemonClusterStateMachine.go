@@ -1,4 +1,4 @@
-package cephdaemoncluster
+package daemoncluster
 
 import (
 	"context"
@@ -10,51 +10,36 @@ import (
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-type TransitionFunc func(client.Client, *runtime.Scheme) error
-
-//type podCheckFunc func(*corev1.Pod) bool
-
-type CephDaemonClusterStateMachine interface {
-	State() cephv1alpha1.CephDaemonClusterState
-	GetTransition(ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephDaemonClusterState)
-}
-
-type ReadOnlyClient interface {
-	Get(context.Context, types.NamespacedName, runtime.Object) error
-	List(context.Context, *client.ListOptions, runtime.Object) error
-}
-
-func NewCephDaemonClusterStateMachine(daemonCluster *cephv1alpha1.CephDaemonCluster,
+func NewStateMachine(daemonCluster DaemonCluster,
 	cluster *cephv1alpha1.CephCluster, logger logr.Logger) CephDaemonClusterStateMachine {
 
-	switch daemonCluster.Spec.DaemonType {
+	switch daemonCluster.GetDaemonType() {
 	case cephv1alpha1.CephDaemonTypeMgr:
-		return &MgrStateMachine{BaseStateMachine: newBaseStateMachine(daemonCluster, cluster, logger)}
+		return &MgrStateMachine{BaseStateMachine: NewBaseStateMachine(daemonCluster, cluster, logger)}
 	case cephv1alpha1.CephDaemonTypeMds:
-		return &MdsStateMachine{BaseStateMachine: newBaseStateMachine(daemonCluster, cluster, logger)}
+		return &MdsStateMachine{BaseStateMachine: NewBaseStateMachine(daemonCluster, cluster, logger)}
 	default:
 		return nil
 	}
 }
 
-func newBaseStateMachine(daemonCluster *cephv1alpha1.CephDaemonCluster,
+func NewBaseStateMachine(daemonCluster DaemonCluster,
 	cluster *cephv1alpha1.CephCluster, logger logr.Logger) *BaseStateMachine {
 	return &BaseStateMachine{cluster: cluster, daemonCluster: daemonCluster, logger: logger}
 }
 
 type BaseStateMachine struct {
 	cluster       *cephv1alpha1.CephCluster
-	daemonCluster *cephv1alpha1.CephDaemonCluster
+	daemonCluster DaemonCluster
 	logger        logr.Logger
 }
 
 func (s *BaseStateMachine) daemonClusterEnabled() bool {
-	return !s.daemonCluster.Spec.Disabled && s.cluster.GetDaemonEnabled(s.daemonCluster.GetDaemonType())
+	return !s.daemonCluster.Disabled() && s.cluster.GetDaemonEnabled(s.daemonCluster.GetDaemonType())
 }
 
 func (s *BaseStateMachine) State() cephv1alpha1.CephDaemonClusterState {
@@ -96,7 +81,7 @@ func (s *BaseStateMachine) scaleUp(client client.Client, scheme *runtime.Scheme)
 	daemon := cephv1alpha1.NewCephDaemon(s.daemonCluster.GetDaemonType(), s.daemonCluster.GetCephClusterName())
 
 	daemon.Spec.Image = s.daemonCluster.GetImage()
-	daemon.Spec.CephConfConfigMapName = s.daemonCluster.GetCephConfConfigMapName()
+	daemon.Spec.CephConfConfigMapName = s.cluster.GetCephConfigMapName()
 	daemon.Namespace = s.daemonCluster.GetNamespace()
 
 	if err := controllerutil.SetControllerReference(s.daemonCluster, daemon, scheme); err != nil {
@@ -127,7 +112,7 @@ func (s *BaseStateMachine) correctReplicaCount(client ReadOnlyClient) (bool, err
 	if err != nil {
 		return false, err
 	}
-	return len(daemons.Items) == s.daemonCluster.Spec.Replicas, nil
+	return len(daemons.Items) == s.daemonCluster.DesiredReplicas(), nil
 }
 
 func (s *BaseStateMachine) scale(client ReadOnlyClient) (TransitionFunc, error) {
@@ -137,11 +122,11 @@ func (s *BaseStateMachine) scale(client ReadOnlyClient) (TransitionFunc, error) 
 		return nil, err
 	}
 	daemonCount := len(daemons.Items)
-	if daemonCount > s.daemonCluster.Spec.Replicas {
+	if daemonCount > s.daemonCluster.DesiredReplicas() {
 		return s.scaleDown, nil
 	}
 
-	if daemonCount < s.daemonCluster.Spec.Replicas {
+	if daemonCount < s.daemonCluster.DesiredReplicas() {
 		return s.scaleUp, nil
 	}
 
@@ -188,28 +173,4 @@ func (s *BaseStateMachine) GetTransition(client ReadOnlyClient) (TransitionFunc,
 	}
 
 	return nil, s.State()
-}
-
-type MgrStateMachine struct {
-	*BaseStateMachine
-}
-
-func (s *MgrStateMachine) GetTransition(client ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephDaemonClusterState) {
-
-	switch s.State() {
-	default:
-		return s.BaseStateMachine.GetTransition(client)
-	}
-}
-
-type MdsStateMachine struct {
-	*BaseStateMachine
-}
-
-func (s *MdsStateMachine) GetTransition(client ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephDaemonClusterState) {
-
-	switch s.State() {
-	default:
-		return s.BaseStateMachine.GetTransition(client)
-	}
 }
