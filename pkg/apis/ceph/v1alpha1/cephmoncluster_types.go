@@ -112,14 +112,15 @@ func (m MonMap) GetInitalMonMap() MonMap {
 	return initMonMap
 }
 
-type MonClusterState string
-
 const (
-	MonClusterIdle               MonClusterState = "Idle"
-	MonClusterLaunching          MonClusterState = "Launching"
-	MonClusterEstablishingQuorum MonClusterState = "Establishing Quorum"
-	MonClusterInQuorum           MonClusterState = "In Quorum"
-	MonClusterLostQuorum         MonClusterState = "Lost Quorum"
+	MonClusterIdle               CephDaemonClusterState = "Idle"
+	MonClusterGenKeyrings                               = "Generate Keyrings"
+	MonClusterGenMonMap                                 = "Generate MonMap"
+	MonClusterLaunching                                 = "Launching"
+	MonClusterEnableFirstMon                            = "Enable First Mon"
+	MonClusterEstablishingQuorum                        = "Establishing Quorum"
+	MonClusterInQuorum                                  = "In Quorum"
+	MonClusterLostQuorum                                = "Lost Quorum"
 )
 
 // CephMonClusterSpec defines the desired state of CephMonCluster
@@ -131,8 +132,8 @@ type CephMonClusterSpec struct {
 
 // CephMonClusterStatus defines the observed state of CephMonCluster
 type CephMonClusterStatus struct {
-	StartEpoch int             `json:"monStartEpoch"`
-	State      MonClusterState `json:"monClusterState"`
+	StartEpoch int                    `json:"monStartEpoch"`
+	State      CephDaemonClusterState `json:"monClusterState"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -188,18 +189,18 @@ func (c *CephMonCluster) GetConfigMapName() string {
 	return fmt.Sprintf("%s-monmap", c.GetName())
 }
 
-func (c *CephMonCluster) GetMonClusterState() MonClusterState {
+func (c *CephMonCluster) GetState() CephDaemonClusterState {
 	return c.Status.State
 }
 
-func (c *CephMonCluster) SetMonClusterState(state MonClusterState) {
+func (c *CephMonCluster) SetState(state CephDaemonClusterState) {
 	c.Status.State = state
 }
 
-func (c *CephMonCluster) CheckMonClusterState(state ...MonClusterState) bool {
+func (c *CephMonCluster) CheckMonClusterState(state ...CephDaemonClusterState) bool {
 
 	for _, st := range state {
-		if c.GetMonClusterState() == st {
+		if c.GetState() == st {
 			return true
 		}
 	}
@@ -233,4 +234,12 @@ func (c *CephMonCluster) GetCephConfConfigMapName() string {
 
 func (c *CephMonCluster) GetDaemonType() CephDaemonType {
 	return CephDaemonType("mon")
+}
+
+func (c *CephMonCluster) DesiredReplicas() int {
+	return 0
+}
+
+func (c *CephMonCluster) Disabled() bool {
+	return false
 }

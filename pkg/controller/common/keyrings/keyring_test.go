@@ -1,4 +1,4 @@
-package cephmoncluster
+package keyrings
 
 import (
 	"testing"

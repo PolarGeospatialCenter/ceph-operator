@@ -22,6 +22,8 @@ func NewStateMachine(daemonCluster DaemonCluster,
 		return &MgrStateMachine{BaseStateMachine: NewBaseStateMachine(daemonCluster, cluster, logger)}
 	case cephv1alpha1.CephDaemonTypeMds:
 		return &MdsStateMachine{BaseStateMachine: NewBaseStateMachine(daemonCluster, cluster, logger)}
+	case cephv1alpha1.CephDaemonTypeMon:
+		return &MonClusterStateMachine{BaseStateMachine: NewBaseStateMachine(daemonCluster, cluster, logger)}
 	default:
 		return nil
 	}
