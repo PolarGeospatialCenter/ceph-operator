@@ -2,11 +2,17 @@ package v1alpha1
 
 import (
 	"fmt"
+	"net"
+	"strconv"
+
+	"k8s.io/apimachinery/pkg/types"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+const MonQuorumPodCondition corev1.PodConditionType = corev1.PodReady
 
 // CephMonSpec defines the desired state of CephMon
 type CephMonSpec struct {
@@ -14,11 +20,28 @@ type CephMonSpec struct {
 	ID               string `json:"id"`
 	PvSelectorString string `json:"pvSelectorString"`
 	Disabled         bool   `json:"disabled"`
+	Port             int    `json:"port"`
 }
+
+// MonState describes the state of the monitor
+type MonState string
+
+const (
+	MonLaunchPod       MonState = "Launch Pod"
+	MonWaitForPodRun   MonState = "Wait for Pod Run"
+	MonWaitForPodReady MonState = "Wait for Pod Ready"
+	MonInQuorum        MonState = "In Quorum"
+	MonError           MonState = "Error"
+	MonCleanup         MonState = "Cleanup"
+	MonIdle            MonState = "Idle"
+)
 
 // CephMonStatus defines the observed state of CephMon
 type CephMonStatus struct {
-	Healthy bool `json:"healthy"`
+	StartEpoch   int      `json:"startEpoch"`
+	State        MonState `json:"monState"`
+	PodIP        net.IP   `json:"podIP"`
+	InitalMember bool     `json:"initalMember"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -79,19 +102,23 @@ func (m *CephMon) GetVolumeClaimTemplate() (*corev1.PersistentVolumeClaim, error
 	return pvc, nil
 }
 
-func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, namespace, clusterDomain string) *corev1.Pod {
+func (m *CephMon) GetPodName() string {
+	return fmt.Sprintf("ceph-%s", m.GetName())
+}
+
+func (m *CephMon) GetPod(monCluster *CephMonCluster, clientAdminKeyringName string) *corev1.Pod {
 	pod := &corev1.Pod{}
 
 	pod.APIVersion = "v1"
 	pod.Kind = "Pod"
 
-	pod.Name = fmt.Sprintf("ceph-%s-mon-%s", m.GetClusterName(), m.GetName())
+	pod.Name = m.GetPodName()
 
 	pod.SetLabels(map[string]string{MonitorServiceLabel: ""})
 
 	container := corev1.Container{}
 	container.Name = "ceph-mon"
-	container.Image = monImage
+	container.Image = monCluster.GetImage().String()
 	container.Env = []corev1.EnvVar{
 		corev1.EnvVar{
 			Name:  "CMD",
@@ -109,6 +136,14 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, name
 			Name:  "MON_ID",
 			Value: m.Spec.ID,
 		},
+		corev1.EnvVar{
+			Name:  "CLUSTER",
+			Value: m.Spec.ClusterName,
+		},
+		corev1.EnvVar{
+			Name:  "MON_CLUSTER_START_EPOCH",
+			Value: strconv.Itoa(monCluster.Status.StartEpoch),
+		},
 	}
 
 	container.VolumeMounts = []corev1.VolumeMount{
@@ -120,6 +155,40 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, name
 			Name:      "ceph-mon-data",
 			MountPath: "/mon",
 		},
+		corev1.VolumeMount{
+			Name:      "moncluster-configmap",
+			MountPath: "/config/moncluster",
+		},
+		corev1.VolumeMount{
+			Name:      "client-admin-keyring",
+			MountPath: "/keyrings/client.admin",
+		},
+	}
+
+	container.ImagePullPolicy = corev1.PullAlways
+
+	handler := corev1.Handler{
+		Exec: &corev1.ExecAction{
+			Command: []string{
+				"/ceph/bin/mon_health.sh",
+			},
+		},
+	}
+
+	container.ReadinessProbe = &corev1.Probe{
+		Handler:             handler,
+		InitialDelaySeconds: 10,
+		PeriodSeconds:       10,
+		FailureThreshold:    3,
+		TimeoutSeconds:      5,
+	}
+
+	container.LivenessProbe = &corev1.Probe{
+		Handler:             handler,
+		InitialDelaySeconds: 30,
+		PeriodSeconds:       30,
+		TimeoutSeconds:      5,
+		FailureThreshold:    2,
 	}
 
 	pod.Spec.Containers = []corev1.Container{container}
@@ -138,16 +207,28 @@ func (m *CephMon) GetPod(monImage, cephConfConfigMap, discoveryServiceName, name
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: cephConfConfigMap,
+						Name: monCluster.GetCephConfConfigMapName(),
 					},
 				},
 			},
 		},
-	}
-
-	pod.Spec.DNSConfig = &corev1.PodDNSConfig{
-		Searches: []string{
-			fmt.Sprintf("%s.%s.svc.%s", discoveryServiceName, namespace, clusterDomain),
+		corev1.Volume{
+			Name: "moncluster-configmap",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: monCluster.GetConfigMapName(),
+					},
+				},
+			},
+		},
+		corev1.Volume{
+			Name: "client-admin-keyring",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: clientAdminKeyringName,
+				},
+			},
 		},
 	}
 
@@ -173,4 +254,44 @@ func (m *CephMon) GetKind() string {
 
 func (m *CephMon) SetKind(kind string) {
 	m.Kind = kind
+}
+
+func (c *CephMon) GetMonState() MonState {
+	return c.Status.State
+}
+
+func (c *CephMon) SetMonState(state MonState) {
+	c.Status.State = state
+}
+
+func (c *CephMon) CheckMonState(state ...MonState) bool {
+
+	for _, st := range state {
+		if c.GetMonState() == st {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c *CephMon) GetPort() int {
+	if c.Spec.Port == 0 {
+		return 6789
+	}
+	return c.Spec.Port
+}
+
+func (c *CephMon) GetMonMapEntry() MonMapEntry {
+	return MonMapEntry{
+		IP:           c.Status.PodIP,
+		Port:         c.GetPort(),
+		StartEpoch:   c.Status.StartEpoch,
+		State:        c.Status.State,
+		InitalMember: c.Status.InitalMember,
+		NamespacedName: types.NamespacedName{
+			Name:      c.GetName(),
+			Namespace: c.GetNamespace(),
+		},
+	}
 }

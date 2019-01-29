@@ -1,4 +1,4 @@
-package cephcluster
+package cephmoncluster
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -47,6 +49,11 @@ func (k *Keyring) GetSecret(cluster string) *corev1.Secret {
 	keyringFilename := "keyring"
 	secret.StringData = make(map[string]string)
 	secret.StringData[keyringFilename] = k.CreateKeyring()
+
+	secret.SetLabels(map[string]string{
+		cephv1alpha1.ClusterNameLabel:   cluster,
+		cephv1alpha1.KeyringEntityLabel: k.Entity,
+	})
 
 	return secret
 }

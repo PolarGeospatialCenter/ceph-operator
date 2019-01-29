@@ -1,0 +1,39 @@
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  name: cephdaemons.ceph.k8s.pgc.umn.edu
+spec:
+  group: ceph.k8s.pgc.umn.edu
+  names:
+    kind: CephDaemon
+    listKind: CephDaemonList
+    plural: cephdaemons
+    singular: cephdaemon
+  scope: Namespaced
+  version: v1alpha1
+  additionalPrinterColumns:
+  - name: ClusterName
+    type: string
+    description: The name of the cluster
+    JSONPath: .spec.clusterName
+    priority: 3
+  - name: DaemonType
+    type: string
+    description: The type of the daemon
+    JSONPath: .spec.daemonType
+    priority: 0
+  - name: Disabled
+    type: boolean
+    description: The disabled status of the disk
+    JSONPath: .spec.disabled
+    priority: 0
+  - name: State
+    type: string
+    description: The state of the daemon
+    JSONPath: .status.state
+    priority: 0
+  - name: Id
+    type: string
+    description: The ID of the daemon
+    JSONPath: .spec.id
+    priority: 1

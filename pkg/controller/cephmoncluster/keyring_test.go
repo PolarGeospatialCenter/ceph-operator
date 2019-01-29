@@ -1,4 +1,4 @@
-package cephcluster
+package cephmoncluster
 
 import (
 	"testing"

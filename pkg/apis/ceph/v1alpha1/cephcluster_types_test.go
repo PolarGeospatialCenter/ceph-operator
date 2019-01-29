@@ -30,9 +30,43 @@ func TestGetCephConfigMap(t *testing.T) {
 					Name: "ceph-test-conf",
 				},
 				Data: map[string]string{
-					"ceph.conf": "[global]\n" +
+					"test.conf": "[global]\n" +
 						"fsid     = FCA3CCCA-8258-4A72-8C10-39CF2B0585EE\n" +
 						"mon_host = monitor\n\n"}},
+		},
+		{
+			Name: "override-config-parameters",
+			Cluster: CephCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+				},
+				Spec: CephClusterSpec{
+					Fsid:           "FCA3CCCA-8258-4A72-8C10-39CF2B0585EE",
+					MonServiceName: "monitor",
+					Config: map[string]map[string]string{
+						"global": map[string]string{
+							"mon_host": "fooservice",
+							"keyring":  "/keyrings/client.admin/keyring",
+						},
+						"mon": map[string]string{
+							"fookey": "barval",
+						},
+					},
+				},
+			},
+			ExpectedConfigMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "ceph-test-conf",
+				},
+				Data: map[string]string{
+					"test.conf": "[global]\n" +
+						"fsid     = FCA3CCCA-8258-4A72-8C10-39CF2B0585EE\n" +
+						"mon_host = fooservice\n" +
+						"keyring  = /keyrings/client.admin/keyring\n" +
+						"\n" +
+						"[mon]\n" +
+						"fookey = barval\n" +
+						"\n"}},
 		},
 	}
 
