@@ -52,7 +52,7 @@ func (k *Keyring) GetSecret(cluster string) *corev1.Secret {
 
 	secret.SetLabels(map[string]string{
 		cephv1alpha1.ClusterNameLabel:   cluster,
-		cephv1alpha1.KeyringEntityLabel: k.Entity,
+		cephv1alpha1.KeyringEntityLabel: strings.Trim(k.Entity, "."),
 	})
 
 	return secret
