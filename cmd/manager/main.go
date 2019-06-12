@@ -52,9 +52,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Become the leader before proceeding
-	leader.Become(context.TODO(), "ceph-operator-lock")
-
 	r := ready.NewFileReady()
 	err = r.Set()
 	if err != nil {
@@ -62,6 +59,9 @@ func main() {
 		os.Exit(1)
 	}
 	defer r.Unset()
+
+	// Become the leader before proceeding
+	leader.Become(context.TODO(), "ceph-operator-lock")
 
 	// Create a new Cmd to provide shared dependencies and start components
 	mgr, err := manager.New(cfg, manager.Options{Namespace: namespace})
