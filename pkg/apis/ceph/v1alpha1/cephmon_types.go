@@ -92,6 +92,10 @@ func (m *CephMon) GetVolumeClaimTemplate() (*corev1.PersistentVolumeClaim, error
 	pvc.Spec.AccessModes = []corev1.PersistentVolumeAccessMode{
 		corev1.ReadWriteOnce,
 	}
+
+	storageClass := "local-storage"
+	pvc.Spec.StorageClassName = &storageClass
+
 	qty := resource.NewQuantity(100000, resource.DecimalSI)
 	pvc.Spec.Resources = corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
