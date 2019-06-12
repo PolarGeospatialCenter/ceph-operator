@@ -9,6 +9,6 @@ RUN dep ensure -vendor-only
 COPY ./ .
 RUN go build -o /bin/ceph-operator ./cmd/manager
 
-FROM scratch
+FROM debian:stretch-slim
 COPY --from=0 /bin/ceph-operator /bin/ceph-operator
 ENTRYPOINT /bin/ceph-operator
