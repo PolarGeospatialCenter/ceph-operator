@@ -8,6 +8,7 @@ import (
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
 	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common/keyrings"
+	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common/statemachine"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -23,7 +24,7 @@ func (s *MonClusterStateMachine) currentStartEpoch() int {
 	return monCluster.Status.StartEpoch
 }
 
-func (s *MonClusterStateMachine) GetTransition(readClient ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephDaemonClusterState) {
+func (s *MonClusterStateMachine) GetTransition(readClient statemachine.ReadOnlyClient) (statemachine.TransitionFunc, cephv1alpha1.CephDaemonClusterState) {
 
 	if !s.cluster.GetDaemonEnabled(cephv1alpha1.CephDaemonTypeMon) &&
 		(s.daemonCluster.GetState() != cephv1alpha1.MonClusterIdle ||
@@ -115,15 +116,15 @@ func (s *MonClusterStateMachine) GetTransition(readClient ReadOnlyClient) (Trans
 	return nil, s.State()
 }
 
-func (s *MonClusterStateMachine) keyringsExist(readClient ReadOnlyClient) (bool, error) {
+func (s *MonClusterStateMachine) keyringsExist(readClient statemachine.ReadOnlyClient) (bool, error) {
 	return false, nil
 }
 
-func (s *MonClusterStateMachine) monMapExists(readClient ReadOnlyClient) (bool, error) {
+func (s *MonClusterStateMachine) monMapExists(readClient statemachine.ReadOnlyClient) (bool, error) {
 	return false, nil
 }
 
-func (s *MonClusterStateMachine) getMonMap(readClient ReadOnlyClient) (cephv1alpha1.MonMap, error) {
+func (s *MonClusterStateMachine) getMonMap(readClient statemachine.ReadOnlyClient) (cephv1alpha1.MonMap, error) {
 	monitors := &cephv1alpha1.CephMonList{}
 	listOptions := &client.ListOptions{}
 	listOptions.MatchingLabels(map[string]string{cephv1alpha1.ClusterNameLabel: s.cluster.GetName()})

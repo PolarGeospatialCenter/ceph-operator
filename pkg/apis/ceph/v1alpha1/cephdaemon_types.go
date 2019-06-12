@@ -92,8 +92,36 @@ func (d *CephDaemon) CheckReady() bool {
 	return false
 }
 
+func (d *CephDaemon) GetDaemonType() CephDaemonType {
+	return d.Spec.DaemonType
+}
+
+func (d *CephDaemon) GetDaemonID() string {
+	return d.Spec.ID
+}
+
+func (d *CephDaemon) SetCephClusterName(name string) {
+	d.Spec.ClusterName = name
+}
+
+func (d *CephDaemon) GetCephClusterName() string {
+	return d.Spec.ClusterName
+}
+
+func (d *CephDaemon) SetImage(image ImageSpec) {
+	d.Spec.Image = image
+}
+
+func (d *CephDaemon) GetImage() ImageSpec {
+	return d.Spec.Image
+}
+
 func (d *CephDaemon) GetState() CephDaemonState {
 	return d.Status.State
+}
+
+func (d *CephDaemon) GetDisabled() bool {
+	return d.Spec.Disabled
 }
 
 func (d *CephDaemon) SetState(s CephDaemonState) {

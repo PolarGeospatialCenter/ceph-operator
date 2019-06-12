@@ -1,4 +1,4 @@
-package cephdaemon
+package daemon
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
+	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common/statemachine"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -15,20 +16,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-type TransitionFunc func(client.Client, *runtime.Scheme) error
 type podCheckFunc func(*corev1.Pod) bool
 
-type CephDaemonStateMachine interface {
-	State() cephv1alpha1.CephDaemonState
-	GetTransition(ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephDaemonState)
-}
-
-type ReadOnlyClient interface {
-	Get(context.Context, types.NamespacedName, runtime.Object) error
-	List(context.Context, *client.ListOptions, runtime.Object) error
-}
-
-func NewCephDaemonStateMachine(daemon *cephv1alpha1.CephDaemon,
+func NewStateMachine(daemon *cephv1alpha1.CephDaemon,
 	daemonCluster *cephv1alpha1.CephDaemonCluster, logger logr.Logger) CephDaemonStateMachine {
 
 	switch daemon.Spec.DaemonType {
@@ -41,26 +31,26 @@ func NewCephDaemonStateMachine(daemon *cephv1alpha1.CephDaemon,
 	}
 }
 
-func newBaseStateMachine(daemon *cephv1alpha1.CephDaemon,
-	daemonCluster *cephv1alpha1.CephDaemonCluster, logger logr.Logger) *BaseStateMachine {
+func newBaseStateMachine(daemon Daemon,
+	daemonCluster statemachine.DaemonCluster, logger logr.Logger) *BaseStateMachine {
 	return &BaseStateMachine{daemon: daemon, daemonCluster: daemonCluster, logger: logger}
 }
 
 type BaseStateMachine struct {
-	daemon        *cephv1alpha1.CephDaemon
-	daemonCluster *cephv1alpha1.CephDaemonCluster
+	daemon        Daemon
+	daemonCluster statemachine.DaemonCluster
 	logger        logr.Logger
 }
 
 func (s *BaseStateMachine) daemonEnabled() bool {
-	return !s.daemon.Spec.Disabled && s.daemonCluster.GetState() != cephv1alpha1.CephDaemonClusterStateIdle
+	return !s.daemon.GetDisabled() && s.daemonCluster.GetState() != cephv1alpha1.CephDaemonClusterStateIdle
 }
 
 func (s *BaseStateMachine) State() cephv1alpha1.CephDaemonState {
 	return s.daemon.GetState()
 }
 
-func (s *BaseStateMachine) checkPod(client ReadOnlyClient, checkFunc podCheckFunc) (bool, error) {
+func (s *BaseStateMachine) checkPod(client statemachine.ReadOnlyClient, checkFunc podCheckFunc) (bool, error) {
 
 	pod := &corev1.Pod{}
 	err := client.Get(context.TODO(), types.NamespacedName{
@@ -92,7 +82,7 @@ func (s *BaseStateMachine) logError(client client.Client, scheme *runtime.Scheme
 }
 
 func (s *BaseStateMachine) launchPod(client client.Client, scheme *runtime.Scheme) error {
-	daemonType := s.daemon.Spec.DaemonType
+	daemonType := s.daemon.GetDaemonType()
 
 	pod := s.daemon.GetBasePod()
 
@@ -102,11 +92,11 @@ func (s *BaseStateMachine) launchPod(client client.Client, scheme *runtime.Schem
 	},
 		corev1.EnvVar{
 			Name:  "DAEMON_ID",
-			Value: s.daemon.Spec.ID,
+			Value: s.daemon.GetDaemonID(),
 		},
 	}
 
-	keyringName := fmt.Sprintf("ceph-%s-client.bootstrap-%s-keyring", s.daemon.Spec.ClusterName, daemonType)
+	keyringName := fmt.Sprintf("ceph-%s-client.bootstrap-%s-keyring", s.daemon.GetCephClusterName(), daemonType)
 	volumeMounts := []corev1.VolumeMount{corev1.VolumeMount{
 		Name:      fmt.Sprintf("%s-bootstrap-keyring", daemonType),
 		MountPath: fmt.Sprintf("/keyrings/client.bootstrap-%s", daemonType),
@@ -136,7 +126,7 @@ func (s *BaseStateMachine) launchPod(client client.Client, scheme *runtime.Schem
 	return nil
 }
 
-func (s *BaseStateMachine) GetTransition(client ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephDaemonState) {
+func (s *BaseStateMachine) GetTransition(client statemachine.ReadOnlyClient) (statemachine.TransitionFunc, cephv1alpha1.CephDaemonState) {
 
 	if !s.daemonEnabled() && s.State() != cephv1alpha1.CephDaemonStateCleanup && s.State() != cephv1alpha1.CephDaemonStateIdle {
 		return nil, cephv1alpha1.CephDaemonStateCleanup
@@ -191,7 +181,7 @@ type MgrStateMachine struct {
 	*BaseStateMachine
 }
 
-func (s *MgrStateMachine) GetTransition(client ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephDaemonState) {
+func (s *MgrStateMachine) GetTransition(client statemachine.ReadOnlyClient) (statemachine.TransitionFunc, cephv1alpha1.CephDaemonState) {
 
 	switch s.State() {
 	default:
@@ -203,7 +193,7 @@ type MdsStateMachine struct {
 	*BaseStateMachine
 }
 
-func (s *MdsStateMachine) GetTransition(client ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephDaemonState) {
+func (s *MdsStateMachine) GetTransition(client statemachine.ReadOnlyClient) (statemachine.TransitionFunc, cephv1alpha1.CephDaemonState) {
 
 	switch s.State() {
 	default:

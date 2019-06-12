@@ -18,7 +18,7 @@ type MonMapEntry struct {
 	IP             net.IP
 	Port           int
 	StartEpoch     int
-	State          MonState
+	State          CephDaemonState
 	InitalMember   bool
 	NamespacedName types.NamespacedName
 }
@@ -63,7 +63,7 @@ func (m MonMap) QuorumCount() int {
 	return (len(m) / 2) + 1
 }
 
-func (m MonMap) AllInState(state MonState) bool {
+func (m MonMap) AllInState(state CephDaemonState) bool {
 	for _, e := range m {
 		if e.State != state {
 			return false
@@ -72,7 +72,7 @@ func (m MonMap) AllInState(state MonState) bool {
 	return true
 }
 
-func (m MonMap) CountInState(state MonState) int {
+func (m MonMap) CountInState(state CephDaemonState) int {
 	var count int
 	for _, e := range m {
 		if e.State == state {
@@ -197,7 +197,7 @@ func (c *CephMonCluster) SetState(state CephDaemonClusterState) {
 	c.Status.State = state
 }
 
-func (c *CephMonCluster) CheckMonClusterState(state ...CephDaemonClusterState) bool {
+func (c *CephMonCluster) StateIn(state ...CephDaemonClusterState) bool {
 
 	for _, st := range state {
 		if c.GetState() == st {

@@ -27,21 +27,21 @@ type CephMonSpec struct {
 type MonState string
 
 const (
-	MonLaunchPod       MonState = "Launch Pod"
-	MonWaitForPodRun   MonState = "Wait for Pod Run"
-	MonWaitForPodReady MonState = "Wait for Pod Ready"
-	MonInQuorum        MonState = "In Quorum"
-	MonError           MonState = "Error"
-	MonCleanup         MonState = "Cleanup"
-	MonIdle            MonState = "Idle"
+	MonLaunchPod       CephDaemonState = "Launch Pod"
+	MonWaitForPodRun                   = "Wait for Pod Run"
+	MonWaitForPodReady                 = "Wait for Pod Ready"
+	MonInQuorum                        = "In Quorum"
+	MonError                           = "Error"
+	MonCleanup                         = "Cleanup"
+	MonIdle                            = "Idle"
 )
 
 // CephMonStatus defines the observed state of CephMon
 type CephMonStatus struct {
-	StartEpoch   int      `json:"startEpoch"`
-	State        MonState `json:"monState"`
-	PodIP        net.IP   `json:"podIP"`
-	InitalMember bool     `json:"initalMember"`
+	StartEpoch   int             `json:"startEpoch"`
+	State        CephDaemonState `json:"monState"`
+	PodIP        net.IP          `json:"podIP"`
+	InitalMember bool            `json:"initalMember"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -256,18 +256,18 @@ func (m *CephMon) SetKind(kind string) {
 	m.Kind = kind
 }
 
-func (c *CephMon) GetMonState() MonState {
+func (c *CephMon) GetState() CephDaemonState {
 	return c.Status.State
 }
 
-func (c *CephMon) SetMonState(state MonState) {
+func (c *CephMon) SetState(state CephDaemonState) {
 	c.Status.State = state
 }
 
-func (c *CephMon) CheckMonState(state ...MonState) bool {
+func (c *CephMon) StateIn(state ...CephDaemonState) bool {
 
 	for _, st := range state {
-		if c.GetMonState() == st {
+		if c.GetState() == st {
 			return true
 		}
 	}

@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
+	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common/statemachine/daemon"
 	corev1 "k8s.io/api/core/v1"
-
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -122,7 +122,7 @@ func (r *ReconcileCephDaemon) Reconcile(request reconcile.Request) (reconcile.Re
 		return reconcile.Result{}, err
 	}
 
-	dsm := NewCephDaemonStateMachine(instance, daemonCluster, reqLogger)
+	dsm := daemon.NewStateMachine(instance, daemonCluster, reqLogger)
 
 	currentState := dsm.State()
 	transtionFunc, nextState := dsm.GetTransition(r.client)

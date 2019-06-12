@@ -7,6 +7,7 @@ import (
 	"time"
 
 	cephv1alpha1 "github.com/PolarGeospatialCenter/ceph-operator/pkg/apis/ceph/v1alpha1"
+	"github.com/PolarGeospatialCenter/ceph-operator/pkg/controller/common/statemachine"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -14,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-func NewStateMachine(daemonCluster DaemonCluster,
+func NewStateMachine(daemonCluster statemachine.DaemonCluster,
 	cluster *cephv1alpha1.CephCluster, logger logr.Logger) CephDaemonClusterStateMachine {
 
 	switch daemonCluster.GetDaemonType() {
@@ -29,14 +30,14 @@ func NewStateMachine(daemonCluster DaemonCluster,
 	}
 }
 
-func NewBaseStateMachine(daemonCluster DaemonCluster,
+func NewBaseStateMachine(daemonCluster statemachine.DaemonCluster,
 	cluster *cephv1alpha1.CephCluster, logger logr.Logger) *BaseStateMachine {
 	return &BaseStateMachine{cluster: cluster, daemonCluster: daemonCluster, logger: logger}
 }
 
 type BaseStateMachine struct {
 	cluster       *cephv1alpha1.CephCluster
-	daemonCluster DaemonCluster
+	daemonCluster statemachine.DaemonCluster
 	logger        logr.Logger
 }
 
@@ -53,9 +54,9 @@ func (s *BaseStateMachine) logError(client client.Client, scheme *runtime.Scheme
 	return nil
 }
 
-func (s *BaseStateMachine) emitError(err error) TransitionFunc {
+func (s *BaseStateMachine) emitError(err error) statemachine.TransitionFunc {
 
-	return TransitionFunc(func(_ client.Client, _ *runtime.Scheme) error {
+	return statemachine.TransitionFunc(func(_ client.Client, _ *runtime.Scheme) error {
 		s.logger.Error(err, "")
 		return nil
 	})
@@ -98,7 +99,7 @@ func (s *BaseStateMachine) scaleUp(client client.Client, scheme *runtime.Scheme)
 	return nil
 }
 
-func (s *BaseStateMachine) listDaemons(readClient ReadOnlyClient) (*cephv1alpha1.CephDaemonList, error) {
+func (s *BaseStateMachine) listDaemons(readClient statemachine.ReadOnlyClient) (*cephv1alpha1.CephDaemonList, error) {
 	daemonList := &cephv1alpha1.CephDaemonList{}
 	daemonListOptions := &client.ListOptions{}
 	daemonListOptions.MatchingLabels(map[string]string{
@@ -109,7 +110,7 @@ func (s *BaseStateMachine) listDaemons(readClient ReadOnlyClient) (*cephv1alpha1
 	return daemonList, readClient.List(context.TODO(), daemonListOptions, daemonList)
 }
 
-func (s *BaseStateMachine) correctReplicaCount(client ReadOnlyClient) (bool, error) {
+func (s *BaseStateMachine) correctReplicaCount(client statemachine.ReadOnlyClient) (bool, error) {
 	daemons, err := s.listDaemons(client)
 	if err != nil {
 		return false, err
@@ -117,7 +118,7 @@ func (s *BaseStateMachine) correctReplicaCount(client ReadOnlyClient) (bool, err
 	return len(daemons.Items) == s.daemonCluster.DesiredReplicas(), nil
 }
 
-func (s *BaseStateMachine) scale(client ReadOnlyClient) (TransitionFunc, error) {
+func (s *BaseStateMachine) scale(client statemachine.ReadOnlyClient) (statemachine.TransitionFunc, error) {
 
 	daemons, err := s.listDaemons(client)
 	if err != nil {
@@ -135,7 +136,7 @@ func (s *BaseStateMachine) scale(client ReadOnlyClient) (TransitionFunc, error) 
 	return nil, nil
 }
 
-func (s *BaseStateMachine) GetTransition(client ReadOnlyClient) (TransitionFunc, cephv1alpha1.CephDaemonClusterState) {
+func (s *BaseStateMachine) GetTransition(client statemachine.ReadOnlyClient) (statemachine.TransitionFunc, cephv1alpha1.CephDaemonClusterState) {
 
 	if !s.daemonClusterEnabled() {
 		return nil, cephv1alpha1.CephDaemonClusterStateIdle
