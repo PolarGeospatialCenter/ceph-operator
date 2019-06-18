@@ -122,6 +122,11 @@ func (s *BaseStateMachine) launchPod(client client.Client, scheme *runtime.Schem
 	}}
 
 	pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, envs...)
+	pod.Spec.Containers[0].Ports = []corev1.ContainerPort{corev1.ContainerPort{
+		Name:          "prometheus",
+		HostPort:      9090,
+		ContainerPort: 9090,
+	}}
 	pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, volumeMounts...)
 	pod.Spec.Volumes = append(pod.Spec.Volumes, volumes...)
 
