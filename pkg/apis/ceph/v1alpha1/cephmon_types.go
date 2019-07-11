@@ -187,6 +187,14 @@ func (m *CephMon) GetPod(monCluster *CephMonCluster, clientAdminKeyringName stri
 		TimeoutSeconds:      10,
 	}
 
+	container.LivenessProbe = &corev1.Probe{
+		Handler:             handler,
+		InitialDelaySeconds: 30,
+		PeriodSeconds:       30,
+		TimeoutSeconds:      25,
+		FailureThreshold:    5,
+	}
+
 	pod.Spec.Containers = []corev1.Container{container}
 
 	pod.Spec.Volumes = []corev1.Volume{
